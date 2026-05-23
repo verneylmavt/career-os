@@ -1,0 +1,262 @@
+[
+  {
+    "id": "job-001",
+    "title": "AI Engineer, Generative AI Platform",
+    "company": "Lumina Labs",
+    "location": "Singapore",
+    "work_mode": "Hybrid",
+    "employment_type": "Full-time",
+    "seniority": "Mid",
+    "salary_range": "S$8,000 - S$12,000 / month",
+    "posted_at": "2026-05-10",
+    "source": "LinkedIn",
+    "url": "https://example.com/jobs/lumina-ai-engineer",
+    "must_have_skills": ["Python", "LLMs", "RAG", "PyTorch", "Prompt Engineering"],
+    "nice_to_have_skills": ["LangChain", "Vector DBs", "AWS"],
+    "description": "Build production LLM features for Lumina's generative AI platform. You'll own retrieval pipelines, evaluation harnesses, and prompt orchestration. Work closely with product and design on user-facing AI features used by thousands of teams across Southeast Asia.",
+    "responsibilities": [
+      "Design and ship retrieval-augmented generation systems",
+      "Build offline + online evals for LLM-driven features",
+      "Partner with PMs to translate vague problems into concrete AI workflows"
+    ],
+    "requirements": [
+      "3+ years building production ML or backend systems",
+      "Hands-on with one or more LLM frameworks (LangChain, LlamaIndex, custom)",
+      "Comfort writing Python and shipping APIs"
+    ]
+  },
+  {
+    "id": "job-002",
+    "title": "NLP Engineer",
+    "company": "Polyglot AI",
+    "location": "Singapore",
+    "work_mode": "Hybrid",
+    "employment_type": "Full-time",
+    "seniority": "Mid-Senior",
+    "salary_range": "S$10,000 - S$15,000 / month",
+    "posted_at": "2026-05-15",
+    "source": "LinkedIn",
+    "url": "https://example.com/jobs/polyglot-nlp",
+    "must_have_skills": ["NLP", "Python", "Transformers", "Hugging Face", "Fine-tuning"],
+    "nice_to_have_skills": ["Bahasa Indonesia / Malay corpus", "Multilingual eval", "Kubernetes"],
+    "description": "Ship multilingual NLP for Southeast Asian languages. You'll fine-tune open models, curate datasets, and own evaluation for Bahasa, Tagalog, Thai, and Vietnamese. We support hybrid work with two days in-office in Singapore.",
+    "responsibilities": [
+      "Curate and clean multilingual training corpora",
+      "Fine-tune transformer models with LoRA / QLoRA",
+      "Design human + automated evals for translation quality"
+    ],
+    "requirements": [
+      "Strong grasp of transformer architectures and tokenization",
+      "Experience fine-tuning open models (Llama, Mistral, Qwen, etc.)",
+      "Comfort with PyTorch + Hugging Face stack"
+    ]
+  },
+  {
+    "id": "job-003",
+    "title": "Senior Machine Learning Engineer",
+    "company": "Astra Health",
+    "location": "Jakarta, Indonesia",
+    "work_mode": "Remote",
+    "employment_type": "Full-time",
+    "seniority": "Senior",
+    "salary_range": "IDR 60M - 90M / month",
+    "posted_at": "2026-05-18",
+    "source": "Company site",
+    "url": "https://example.com/jobs/astra-mle",
+    "must_have_skills": ["Python", "MLOps", "FastAPI", "Docker", "AWS"],
+    "nice_to_have_skills": ["Healthcare data", "FHIR", "Generative AI"],
+    "description": "Astra Health is building diagnostic AI for Indonesia's clinics. Lead the ML platform team — from training infra to inference at the edge in low-bandwidth regions.",
+    "responsibilities": [
+      "Own the end-to-end ML platform: training, registry, deployment",
+      "Mentor 3 junior MLEs",
+      "Partner with clinicians on data labelling protocols"
+    ],
+    "requirements": [
+      "5+ years ML engineering",
+      "Track record shipping ML to production at scale",
+      "Comfortable with ambiguity and product-shaped work"
+    ]
+  },
+  {
+    "id": "job-004",
+    "title": "Full-stack Engineer, AI Products",
+    "company": "Reka Studio",
+    "location": "Singapore",
+    "work_mode": "Hybrid",
+    "employment_type": "Full-time",
+    "seniority": "Mid",
+    "salary_range": "S$7,500 - S$11,000 / month",
+    "posted_at": "2026-05-12",
+    "source": "Wellfound",
+    "url": "https://example.com/jobs/reka-fullstack",
+    "must_have_skills": ["TypeScript", "React", "Next.js", "Python", "REST APIs"],
+    "nice_to_have_skills": ["LLMs", "Tailwind", "Postgres", "Vercel"],
+    "description": "Ship AI-powered creative tools for designers and storytellers. You'll bridge a Python FastAPI backend with a Next.js frontend and own user-facing AI features end-to-end.",
+    "responsibilities": [
+      "Design and ship full-stack features from spec to production",
+      "Integrate LLM APIs into product workflows",
+      "Own quality: tests, observability, performance"
+    ],
+    "requirements": [
+      "3+ years full-stack experience",
+      "Strong product sense and UX taste",
+      "Comfortable picking up unfamiliar systems quickly"
+    ]
+  },
+  {
+    "id": "job-005",
+    "title": "Applied Scientist, Search & Ranking",
+    "company": "Tokopedia",
+    "location": "Jakarta, Indonesia",
+    "work_mode": "On-site",
+    "employment_type": "Full-time",
+    "seniority": "Senior",
+    "salary_range": "IDR 70M - 110M / month",
+    "posted_at": "2026-04-30",
+    "source": "LinkedIn",
+    "url": "https://example.com/jobs/tokopedia-applied",
+    "must_have_skills": ["Information Retrieval", "Python", "Ranking models", "SQL", "Experimentation"],
+    "nice_to_have_skills": ["Embeddings", "LLMs", "Spark"],
+    "description": "Drive ranking and retrieval improvements across Tokopedia search. You'll own offline metrics, A/B tests, and the gradient between heuristic and learned ranking.",
+    "responsibilities": [
+      "Build and ship ranking models",
+      "Design offline + online experiments",
+      "Mentor junior scientists"
+    ],
+    "requirements": [
+      "5+ years in search, ranking, or recommendation",
+      "Strong stats foundation",
+      "Comfort with large-scale data tooling"
+    ]
+  },
+  {
+    "id": "job-006",
+    "title": "AI Engineer Intern",
+    "company": "Nusantara AI",
+    "location": "Jakarta, Indonesia",
+    "work_mode": "Hybrid",
+    "employment_type": "Internship",
+    "seniority": "Intern",
+    "salary_range": "IDR 8M - 12M / month",
+    "posted_at": "2026-05-20",
+    "source": "Glints",
+    "url": "https://example.com/jobs/nusantara-intern",
+    "must_have_skills": ["Python", "Curiosity", "Prompt Engineering"],
+    "nice_to_have_skills": ["LangChain", "FastAPI", "React"],
+    "description": "Join a small AI engineering team for a 6-month internship. Ship real product features under mentorship.",
+    "responsibilities": [
+      "Prototype LLM features end-to-end",
+      "Write evals and small datasets",
+      "Pair with senior engineers on production work"
+    ],
+    "requirements": [
+      "Final-year student or recent grad",
+      "Basic Python + Git",
+      "Eagerness to learn"
+    ]
+  },
+  {
+    "id": "job-007",
+    "title": "Staff AI Engineer, Agents",
+    "company": "Helix Systems",
+    "location": "Remote (APAC)",
+    "work_mode": "Remote",
+    "employment_type": "Full-time",
+    "seniority": "Staff",
+    "salary_range": "USD 180k - 240k / year",
+    "posted_at": "2026-05-08",
+    "source": "Company site",
+    "url": "https://example.com/jobs/helix-staff",
+    "must_have_skills": ["LLM agents", "Python", "System design", "Tool use", "Evals"],
+    "nice_to_have_skills": ["Multi-agent orchestration", "Distributed systems", "MCP"],
+    "description": "Architect Helix's agent platform. You'll set the technical direction for tool-using LLM agents serving enterprise customers.",
+    "responsibilities": [
+      "Define agent architecture and primitives",
+      "Set the eval bar across the company",
+      "Mentor across team boundaries"
+    ],
+    "requirements": [
+      "7+ years engineering, 2+ on LLM-shaped systems",
+      "Strong system design",
+      "Comfort writing tech specs and influencing without authority"
+    ]
+  },
+  {
+    "id": "job-008",
+    "title": "Product Engineer (AI)",
+    "company": "Kopi Labs",
+    "location": "Singapore",
+    "work_mode": "On-site",
+    "employment_type": "Full-time",
+    "seniority": "Mid",
+    "salary_range": "S$8,500 - S$12,500 / month",
+    "posted_at": "2026-05-22",
+    "source": "Wellfound",
+    "url": "https://example.com/jobs/kopi-product",
+    "must_have_skills": ["TypeScript", "React", "Product sense", "LLM APIs"],
+    "nice_to_have_skills": ["Figma", "Design systems", "Tailwind"],
+    "description": "Wear designer + engineer hats. Ship AI features that delight users. We sit together five days a week in our Tanjong Pagar studio.",
+    "responsibilities": [
+      "Design and build product features",
+      "Own user research and feedback loops",
+      "Partner with founders on roadmap"
+    ],
+    "requirements": [
+      "3+ years building consumer-grade UI",
+      "Eye for craft and motion",
+      "Comfortable with on-site work"
+    ]
+  },
+  {
+    "id": "job-009",
+    "title": "Backend Engineer, AI Infra",
+    "company": "Zenith Cloud",
+    "location": "Singapore",
+    "work_mode": "Hybrid",
+    "employment_type": "Full-time",
+    "seniority": "Mid-Senior",
+    "salary_range": "S$10,000 - S$14,000 / month",
+    "posted_at": "2026-05-17",
+    "source": "LinkedIn",
+    "url": "https://example.com/jobs/zenith-backend",
+    "must_have_skills": ["Python", "FastAPI", "PostgreSQL", "Redis", "Distributed systems"],
+    "nice_to_have_skills": ["Kubernetes", "gRPC", "LLM serving"],
+    "description": "Build the inference platform that serves Zenith's customer-facing AI products. Focus on latency, cost, and reliability.",
+    "responsibilities": [
+      "Own LLM serving pipeline",
+      "Reduce p99 latency and cost per token",
+      "Run incident response for inference outages"
+    ],
+    "requirements": [
+      "4+ years backend",
+      "Strong systems fundamentals",
+      "Comfort with on-call"
+    ]
+  },
+  {
+    "id": "job-010",
+    "title": "Data Scientist, Growth",
+    "company": "Gojek",
+    "location": "Jakarta, Indonesia",
+    "work_mode": "Hybrid",
+    "employment_type": "Full-time",
+    "seniority": "Mid",
+    "salary_range": "IDR 45M - 65M / month",
+    "posted_at": "2026-05-14",
+    "source": "Company site",
+    "url": "https://example.com/jobs/gojek-ds-growth",
+    "must_have_skills": ["SQL", "Python", "A/B testing", "Causal inference"],
+    "nice_to_have_skills": ["Bayesian methods", "dbt", "Looker"],
+    "description": "Power Gojek's growth experiments. You'll partner with PMs to design tests, analyze impact, and ship winning variations.",
+    "responsibilities": [
+      "Design and analyze A/B experiments",
+      "Build dashboards and self-serve tools",
+      "Communicate findings to non-technical stakeholders"
+    ],
+    "requirements": [
+      "3+ years data science with experimentation focus",
+      "Strong SQL and Python",
+      "Excellent written communication"
+    ]
+  }
+]
