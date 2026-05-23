@@ -1,9 +1,7 @@
-const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(path, {
     cache: "no-store",
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {
@@ -94,7 +92,7 @@ export const api = {
   updateProfile: (patch: Partial<Profile>) =>
     request<Profile>("/api/profile", { method: "PATCH", body: JSON.stringify(patch) }),
   uploadResume: async (form: FormData) => {
-    const res = await fetch(`${BASE}/api/profile/upload`, { method: "POST", body: form });
+    const res = await fetch("/api/profile/upload", { method: "POST", body: form });
     if (!res.ok) throw new Error(await res.text());
     return (await res.json()) as Profile;
   },
