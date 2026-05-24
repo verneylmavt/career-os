@@ -40,7 +40,7 @@ export function JobCard({ match, job: jobProp, onShortlist, shortlisted, rightSl
             {job.company} · {job.location}
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className={`pill ${WORK_MODE_COLOR[job.work_mode] ?? "pill"}`}>
+            <span className={WORK_MODE_COLOR[job.work_mode] ?? "pill"}>
               {job.work_mode}
             </span>
             <span className="pill">{job.seniority}</span>

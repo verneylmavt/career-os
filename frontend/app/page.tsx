@@ -15,14 +15,6 @@ const STAGE_META: Record<Stage, { label: string; bar: string; dot: string }> = {
   rejected:     { label: "Rejected",     bar: "bg-rose-400",    dot: "bg-rose-400"    },
 };
 
-const STATUS_PILL: Record<Stage, string> = {
-  saved:        "pill",
-  applied:      "pill-info",
-  interviewing: "pill-warn",
-  offer:        "pill-success",
-  rejected:     "pill-danger",
-};
-
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [shortlist, setShortlist] = useState<ShortlistEntry[]>([]);
