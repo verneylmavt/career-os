@@ -1,23 +1,15 @@
 """Job discovery, matching, and shortlist."""
-import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..data_utils import load_jobs_dict, load_jobs_list
 from ..services.openai_client import chat_json, chat_text
 from ..store import store
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
-
-_JOBS_PATH = Path(__file__).parent.parent / "data" / "mock_jobs.json"
-
-
-def _load_jobs() -> list[dict[str, Any]]:
-    with _JOBS_PATH.open() as f:
-        return json.load(f)
 
 
 class SearchIn(BaseModel):
@@ -45,9 +37,6 @@ def _score_job(profile: dict[str, Any], job: dict[str, Any], filters: dict[str, 
     profile_skills = {s.lower() for s in profile.get("skills", [])}
     must = job.get("must_have_skills", []) or []
     nice = job.get("nice_to_have_skills", []) or []
-
-    must_lower = [s.lower() for s in must]
-    nice_lower = [s.lower() for s in nice]
 
     matched_must = [s for s in must if s.lower() in profile_skills]
     missing_must = [s for s in must if s.lower() not in profile_skills]
@@ -110,7 +99,7 @@ def search_jobs(body: SearchIn) -> list[dict[str, Any]]:
         ),
     )
 
-    jobs = _load_jobs()
+    jobs = load_jobs_list()
 
     # 2. Filter by role keywords (loose substring match)
     role_keywords = [k.lower() for k in (filters.get("role_keywords") or []) if k]
@@ -153,7 +142,7 @@ def list_shortlist() -> list[dict[str, Any]]:
 
 @router.post("/shortlist")
 def add_to_shortlist(body: ShortlistIn) -> dict[str, Any]:
-    jobs = {j["id"]: j for j in _load_jobs()}
+    jobs = load_jobs_dict()
     job = jobs.get(body.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -187,7 +176,7 @@ def remove_from_shortlist(job_id: str) -> dict[str, str]:
 @router.get("/{job_id}/dossier")
 def company_dossier(job_id: str) -> dict[str, Any]:
     """Generate a 'what to know before your interview' brief."""
-    jobs = {j["id"]: j for j in _load_jobs()}
+    jobs = load_jobs_dict()
     job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

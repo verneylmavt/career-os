@@ -1,22 +1,14 @@
 """Mock interview: generate questions + evaluate answers."""
-import json
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..data_utils import load_jobs_dict
 from ..services.openai_client import chat_json
 from ..store import store
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
-
-_JOBS_PATH = Path(__file__).parent.parent / "data" / "mock_jobs.json"
-
-
-def _load_jobs() -> dict[str, dict[str, Any]]:
-    with _JOBS_PATH.open() as f:
-        return {j["id"]: j for j in json.load(f)}
 
 
 class QuestionsIn(BaseModel):
@@ -25,7 +17,7 @@ class QuestionsIn(BaseModel):
 
 @router.post("/questions")
 def generate_questions(body: QuestionsIn) -> dict[str, Any]:
-    job = _load_jobs().get(body.job_id)
+    job = load_jobs_dict().get(body.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 

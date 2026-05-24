@@ -33,6 +33,11 @@ export default function ShortlistPage() {
   }
 
   async function showDossier(jobId: string) {
+    if (openDossier === jobId) {
+      setOpenDossier(null);
+      setDossier(null);
+      return;
+    }
     setOpenDossier(jobId);
     setDossier(null);
     setDossierLoading(true);
@@ -85,7 +90,9 @@ export default function ShortlistPage() {
             <div className="mt-4 flex flex-wrap gap-2">
               <Link href={`/resume?job=${e.job.id}`} className="btn-primary">Tailor resume</Link>
               <Link href={`/interview?job=${e.job.id}`} className="btn-secondary">Mock interview</Link>
-              <button onClick={() => showDossier(e.job.id)} className="btn-secondary">Company dossier</button>
+              <button onClick={() => showDossier(e.job.id)} className="btn-secondary">
+                {openDossier === e.job.id ? "Close dossier" : "Company dossier"}
+              </button>
               <button onClick={() => remove(e.job.id)} className="ml-auto rounded-md px-2 py-1 text-xs text-ink-500 hover:bg-rose-50 hover:text-rose-700">
                 Remove
               </button>

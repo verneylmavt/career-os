@@ -74,8 +74,8 @@ Open <http://localhost:3000>.
 | Env var | Default | Where |
 |---|---|---|
 | `GEMINI_API_KEY` | — (required) | `.env` (loaded by backend) |
-| `GEMINI_MODEL` | `gemini-2.0-flash` | `.env` |
-| `NEXT_PUBLIC_API_BASE` | `http://localhost:8000` | frontend env (build-time) |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | `.env` |
+| `API_BASE` | `http://localhost:8000` | frontend env (server-side only, used by Next.js proxy) |
 
 ## Demo path (3-minute showcase)
 

@@ -60,6 +60,7 @@ def chat_json(system: str, user: str, schema_hint: str | None = None) -> dict[st
         )
     except ClientError as e:
         _handle_client_error(e)
+        raise  # unreachable: _handle_client_error always raises
 
     content = resp.text or "{}"
     content = content.strip()
@@ -81,5 +82,6 @@ def chat_text(system: str, user: str, temperature: float = 0.6) -> str:
         )
     except ClientError as e:
         _handle_client_error(e)
+        raise  # unreachable: _handle_client_error always raises
 
     return resp.text or ""

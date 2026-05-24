@@ -1,22 +1,14 @@
 """Resume tailoring + cover letter generation."""
-import json
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..data_utils import load_jobs_dict
 from ..services.openai_client import chat_text
 from ..store import store
 
 router = APIRouter(prefix="/api/resume", tags=["resume"])
-
-_JOBS_PATH = Path(__file__).parent.parent / "data" / "mock_jobs.json"
-
-
-def _load_jobs() -> dict[str, dict[str, Any]]:
-    with _JOBS_PATH.open() as f:
-        return {j["id"]: j for j in json.load(f)}
 
 
 class TailorIn(BaseModel):
@@ -32,7 +24,7 @@ class TailorOut(BaseModel):
 
 @router.post("/tailor", response_model=TailorOut)
 def tailor_resume(body: TailorIn) -> dict[str, Any]:
-    job = _load_jobs().get(body.job_id)
+    job = load_jobs_dict().get(body.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     resume_text = store.profile.get("resume_text") or ""
@@ -106,7 +98,7 @@ class CoverLetterIn(BaseModel):
 
 @router.post("/cover-letter")
 def cover_letter(body: CoverLetterIn) -> dict[str, Any]:
-    job = _load_jobs().get(body.job_id)
+    job = load_jobs_dict().get(body.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     resume_text = store.profile.get("resume_text") or ""

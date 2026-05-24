@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, Profile, ShortlistEntry } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 
-export default function ResumePage() {
+function ResumePageInner() {
   const sp = useSearchParams();
   const queryJobId = sp.get("job");
 
@@ -137,6 +137,8 @@ export default function ResumePage() {
             <button
               onClick={() => {
                 setProfile({ ...profile!, resume_text: "" });
+                setTailored(null);
+                setCoverLetter("");
               }}
               className="text-xs text-ink-500 underline"
             >
@@ -256,5 +258,13 @@ export default function ResumePage() {
         )}
       </section>
     </div>
+  );
+}
+
+export default function ResumePage() {
+  return (
+    <Suspense fallback={<Spinner label="Loading…" />}>
+      <ResumePageInner />
+    </Suspense>
   );
 }

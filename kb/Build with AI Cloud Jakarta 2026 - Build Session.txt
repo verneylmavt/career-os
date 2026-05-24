@@ -1,0 +1,93 @@
+## **Introduction**
+
+Welcome to the Build Session! This is your space to experiment, build, and push the boundaries of what's possible using **Antigravity IDE**. Whether you're a seasoned developer or just starting out, this session is designed to be hands-on, collaborative, and most importantly, creative.
+
+## **Logistics**
+
+- Build Time: 14:45 - 16:20
+- Format: **Team up (max. 5 people)** with other participants!
+- Showcase: Starting at 16:20, we will hold a rapid-fire showcase
+  - Length: **3 minutes**
+  - Format: One Slide pitch deck (you can use the [templates here](https://docs.google.com/presentation/d/15HJzsFnp0x3x-2pQzBSNXkW3lCGZ1tzcO2-nFXmHGPQ/edit?usp=sharing), or create your own!) and your working demo powered by **Antigravity IDE**
+
+## **Possible Starter Topics**
+
+- **Developer Experience** -
+
+ex: Streamlining workflows, reducing friction, and improving the day-to-day life of engineers
+
+- **Personal Productivity** -
+
+ex: AI-assisted task management, focus tools, and smarter daily planning
+
+- **Health & Wellness** -
+
+ex: Habit tracking, mental health check-ins, and personalized wellness coaching
+
+- **Learning & Education** -
+
+ex: Adaptive tutoring, skill-gap analysis, and on-demand knowledge tools
+
+- **Creative Projects** -
+
+ex: AI co-creation for music, writing, design, and art exploration
+
+- **Financial Wellness** -
+
+ex: Budgeting, spending insights, and financial goal-setting made accessible
+
+- **Team Collaboration** -
+
+ex: Async communication, meeting summaries, and shared context across teams
+
+- **Career Growth** -
+
+ex: Resume tools, interview prep, mentorship matching, and skill development
+
+- **Home & Lifestyle** -
+
+ex: Smart home management, meal planning, and everyday decision support
+
+- **Travel & Discovery** -
+
+ex: Trip planning, local exploration, and culturally immersive experiences
+
+- **Anything! Make a truly unique solution**
+
+## **Submission Requirements**
+
+At the end of the session. Please submit your work via the official Google Form link below:
+
+[Submit here](https://forms.gle/iGy8ucM51EaUaKSFA)
+
+You will be asked to provide:
+
+- Link to your One Slide pitch deck (Google Slides, ensure that it is shared publicly)
+- Google Developer Profile Link: g.dev/&lt;Your_Username&gt; (Separate with , \[comma\] when entering multiple)
+- GitHub repository link: Ensure the repo is publicly available
+- (Optional) Public Demo Link: A link to your working demo
+
+**Note on the Showcase**
+
+The showcase is highly encouraged! It's a great way to get feedback and see how others use Antigravity
+
+## **Facilitators**
+
+There are 4 facilitators, and the main speaker, that will be able to help you throughout the build session. Each facilitator will be stationed in different sections of the venue. Discuss, ask, and explore possible ideas and approaches for your new app!
+
+- Ibnu Sina Wardy
+- Agung Gunawan
+- Elmo Allistair
+- Wendy
+
+Keep in mind of the time and let others have an opportunity to discuss with the facilitators as well.
+
+## **Sharing**
+
+At the end of the event, don't forget to share your idea/story, One Slide pitch deck, and working demo on social media and tag us at:
+
+- LinkedIn: [linkedin.com/company/gdg-cloud-jakarta](https://www.linkedin.com/company/gdg-cloud-jakarta)
+- Instagram: [instagram.com/gdgcloudjakarta](https://www.instagram.com/gdgcloudjakarta/)
+- Use the hashtags: #BuildWithAICloudJakarta #GDGCloudJakarta #Antigravity
+
+**Good luck and happy building!**

@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, AnswerFeedback, InterviewQuestion, ShortlistEntry } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 
-export default function InterviewPage() {
+function InterviewPageInner() {
   const sp = useSearchParams();
   const queryJob = sp.get("job") || "";
 
@@ -183,5 +183,13 @@ export default function InterviewPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function InterviewPage() {
+  return (
+    <Suspense fallback={<Spinner label="Loading…" />}>
+      <InterviewPageInner />
+    </Suspense>
   );
 }
