@@ -1,10 +1,12 @@
 # CareerOS
 
-Your AI career copilot — **discover** roles, **shortlist** the good ones, **tailor** your resume, **prep** for interviews, and **track** the whole pipeline from one dashboard.
+CareerOS is an AI-powered career copilot that turns the chaos of job hunting into a single, streamlined workflow. Instead of juggling spreadsheets, copy-pasting job descriptions into ChatGPT, and losing track of where you applied, CareerOS brings everything together — from the first search to the final offer.
 
-Built for the **[Build with AI Cloud Jakarta 2026](https://gdg.community.dev/gdg-cloud-jakarta/)** build session — a hands-on hackathon by [GDG Cloud Jakarta](https://www.linkedin.com/company/gdg-cloud-jakarta) where teams had ~90 minutes to build and demo an AI-powered app using [Antigravity IDE](https://antigravity.dev). CareerOS was our entry in the **Career Growth** category.
+Tell it what you're looking for in plain English and it surfaces the best-matched roles from a curated dataset, scored and explained against your actual skills. Shortlist the ones that excite you, then let the AI rewrite your resume and craft a cover letter tuned to that specific job description — grounded in your real experience, not invented. When it's time to prepare, a built-in mock interviewer generates behavioral, technical, and role-specific questions for the role, scores your answers, and shows you exactly how to sharpen them. Your personal dashboard tracks the whole pipeline — saved, applied, interviewing, offer, rejected — surfaces the skill gaps appearing most often across your shortlist, and gives you a live interview readiness score as you practice.
 
-This entire application — backend, frontend, UI/UX, and AI integration — was built entirely through **vibe coding and prompting** using Claude Code (Anthropic) inside Antigravity IDE. No hand-written boilerplate.
+This application was built for the **[Build with AI Cloud Jakarta 2026](https://gdg.community.dev/gdg-cloud-jakarta/)** build session — a hands-on hackathon by [GDG Cloud Jakarta](https://www.linkedin.com/company/gdg-cloud-jakarta) where teams had ~90 minutes to build and demo an AI-powered app using [Antigravity IDE](https://antigravity.dev).
+
+This application was built entirely through vibe coding and prompting.
 
 ---
 
