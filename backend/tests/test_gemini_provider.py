@@ -58,7 +58,9 @@ async def test_schema_sent_to_sdk_and_sparse_resume_has_empty_defaults(caplog):
     assert parsed.skills == [] and parsed.name == "" and parsed.experience_years == 0
     sent = client.calls[0]
     assert sent["model"] == "gemini-3.5-flash-lite"
-    assert sent["config"].response_schema is ExtractionOutput
+    assert sent["config"].response_json_schema == ExtractionOutput.model_json_schema()
+    assert sent["config"].response_schema is None
+    assert sent["config"].automatic_function_calling.disable
     assert sent["config"].temperature is None
     assert "Synthetic resume" not in caplog.text
     assert caplog.records[-1].total_tokens == 28

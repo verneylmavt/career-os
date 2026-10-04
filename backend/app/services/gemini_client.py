@@ -120,7 +120,10 @@ class GeminiProvider:
                     config = types.GenerateContentConfig(
                         system_instruction=system,
                         response_mime_type="application/json",
-                        response_schema=response_schema,
+                        # Raw JSON Schema avoids the SDK's legacy Schema conversion
+                        # emitting unsupported additional_properties for configured 2.x models.
+                        response_json_schema=response_schema.model_json_schema(),
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                     )
                     if model.startswith("gemini-3") and "flash-lite" not in model:
                         config.thinking_config = types.ThinkingConfig(thinking_level="LOW")

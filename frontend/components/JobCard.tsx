@@ -6,6 +6,7 @@ type Props = {
   job?: Job;
   onShortlist?: () => void;
   shortlisted?: boolean;
+  pending?: boolean;
   rightSlot?: React.ReactNode;
 };
 
@@ -26,7 +27,7 @@ const WORK_MODE_COLOR: Record<string, string> = {
   "On-site": "pill",
 };
 
-export function JobCard({ match, job: jobProp, onShortlist, shortlisted, rightSlot }: Props) {
+export function JobCard({ match, job: jobProp, onShortlist, shortlisted, pending, rightSlot }: Props) {
   const job = match?.job ?? jobProp;
   if (!job) return null;
 
@@ -91,7 +92,7 @@ export function JobCard({ match, job: jobProp, onShortlist, shortlisted, rightSl
           {onShortlist && (
             <button
               onClick={onShortlist}
-              disabled={shortlisted}
+              disabled={shortlisted || pending}
               className={shortlisted ? "btn-ghost text-emerald-600 !cursor-default" : "btn-primary"}
             >
               {shortlisted ? (
@@ -102,7 +103,7 @@ export function JobCard({ match, job: jobProp, onShortlist, shortlisted, rightSl
                   Saved
                 </>
               ) : (
-                "+ Shortlist"
+                pending ? "Saving…" : "+ Shortlist"
               )}
             </button>
           )}
