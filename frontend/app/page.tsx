@@ -16,7 +16,7 @@ export default function DashboardPage() {
   const items = shortlist.data ?? [];
   async function move(id: string, status: ShortlistEntry["status"]) {
     const result = await action.run(id, (signal) => api.updateShortlist(id, status, undefined, signal));
-    if (result) await Promise.all([shortlist.mutate(), stats.mutate()]);
+    if (result) await Promise.allSettled([shortlist.mutate(), stats.mutate()]);
   }
   return <div className="space-y-8">
     <header className="flex flex-wrap items-end justify-between gap-4">

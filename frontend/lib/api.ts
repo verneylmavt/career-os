@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ApiError, request } from "./api-client";
+import { request } from "./api-client";
 import { contextSchema, documentsSchema, dossierSchema, feedbackSchema, letterSchema, profileSchema, resumeSchema, searchSchema, sessionSchema, shortlistSchema, statsSchema, type Profile, type ShortlistEntry } from "./contracts";
 
 export type * from "./contracts";
@@ -40,10 +40,5 @@ export const api = {
     request(`/api/interview/${jobPath(job_id)}/session/answers/${encodeURIComponent(question_id)}`, sessionSchema, { method: "PATCH", body: json({ session_id, answer, expected_version }), signal }),
   evaluateAnswer: (job_id: string, session_id: string, question_id: string, answer: string, regenerate = false, signal?: AbortSignal) =>
     request("/api/interview/evaluate", feedbackSchema, { method: "POST", body: json({ job_id, session_id, question_id, answer, regenerate }), signal }),
-  evaluate: async (job_id: string, question_id: string, question: string, answer: string) => {
-    const session = await api.session(job_id);
-    if (!session.session_id) throw new ApiError("Start an interview session first.", "session_not_found", 404);
-    return request("/api/interview/evaluate", feedbackSchema, { method: "POST", body: json({ job_id, session_id: session.session_id, question_id, question, answer }) });
-  },
   stats: (signal?: AbortSignal) => request("/api/dashboard/stats", statsSchema, { signal }),
 };

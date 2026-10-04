@@ -28,7 +28,9 @@ export const useDossier = (jobId: string) => useSaved(jobId ? keys.dossier(jobId
 export const useSession = (jobId: string, sessionId = "") => useSaved(jobId ? keys.session(jobId, sessionId) : null, sessionSchema);
 
 export async function refreshWorkspace() {
-  await mutate((key) => typeof key === "string" && key.startsWith("/api/"));
+  // SWR exposes read failures on each resource; do not turn a successful write
+  // into an unhandled rejection when an independent refresh fails.
+  await mutate((key) => typeof key === "string" && key.startsWith("/api/")).catch(() => undefined);
 }
 
 /** Pending state and errors belong to the resource that started the operation. */
