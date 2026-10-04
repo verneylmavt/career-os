@@ -23,4 +23,3 @@ export function PreparationBrief({ jobId }: { jobId: string }) {
     {resource.data === null && <p className="text-sm text-ink-600">No saved brief yet. Generation starts when you choose Generate brief.</p>}
   </section>;
 }
-

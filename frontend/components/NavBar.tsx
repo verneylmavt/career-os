@@ -68,33 +68,34 @@ const TABS = [
 export function NavBar() {
   const path = usePathname();
   return (
-    <nav className="sticky top-0 z-30 border-b border-ink-100 bg-white/90 backdrop-blur-sm">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
+    <nav aria-label="Primary" className="sticky top-0 z-30 border-b border-ink-200 bg-white/95 backdrop-blur-sm">
+      <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 sm:px-6 md:flex-row md:items-center md:justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5 shrink-0">
-          <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-accent to-violet-700 text-white text-xs font-bold shadow-sm shadow-accent/30">
+        <Link href="/" aria-label="CareerOS home" className="flex min-h-11 items-center gap-2.5 self-start rounded-xl shrink-0">
+          <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-accent to-violet-700 text-white text-xs font-bold shadow-sm shadow-accent/30">
             C
           </span>
           <span className="text-sm font-bold tracking-tight text-ink-900">CareerOS</span>
         </Link>
 
         {/* Nav tabs */}
-        <ul className="flex items-center gap-0.5">
+        <ul className="grid min-w-0 grid-cols-3 gap-1 sm:grid-cols-5">
           {TABS.map((t) => {
             const active = t.href === "/" ? path === "/" : path.startsWith(t.href);
             return (
-              <li key={t.href}>
+              <li key={t.href} className="min-w-0">
                 <Link
                   href={t.href}
+                  aria-current={active ? "page" : undefined}
                   className={
-                    "flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-medium transition-all duration-150 " +
+                    "flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium transition-colors duration-150 sm:px-3 sm:text-sm " +
                     (active
                       ? "bg-ink-900 text-white"
-                      : "text-ink-500 hover:bg-ink-100 hover:text-ink-900")
+                      : "text-ink-600 hover:bg-ink-100 hover:text-ink-900")
                   }
                 >
                   {t.icon}
-                  <span className="hidden sm:inline">{t.label}</span>
+                  <span>{t.label}</span>
                 </Link>
               </li>
             );

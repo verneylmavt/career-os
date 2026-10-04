@@ -10,7 +10,7 @@ const config: Config = {
           100: "#eeeef0",
           200: "#d8d8dd",
           300: "#b3b3bc",
-          400: "#838391",
+          400: "#626270",
           500: "#5d5d6b",
           600: "#43434f",
           700: "#34343e",
@@ -18,7 +18,7 @@ const config: Config = {
           900: "#13131a",
         },
         accent: {
-          DEFAULT: "#7c5cff",
+          DEFAULT: "#6d42e5",
           soft: "#efeaff",
         },
       },

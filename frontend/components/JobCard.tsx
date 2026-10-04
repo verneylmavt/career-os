@@ -16,7 +16,7 @@ function ScoreBadge({ score }: { score: number }) {
   return (
     <div className={`score-badge h-14 w-14 flex-col gap-0 text-base leading-none ${cls}`}>
       <span className="font-bold">{score}</span>
-      <span className="text-[9px] font-medium uppercase tracking-wide opacity-60">fit</span>
+      <span className="text-[10px] font-medium uppercase tracking-wide">fit</span>
     </div>
   );
 }
@@ -32,11 +32,11 @@ export function JobCard({ match, job: jobProp, onShortlist, shortlisted, pending
   if (!job) return null;
 
   return (
-    <div className="card-interactive p-5 animate-fade-up">
+    <article className="card min-w-0 p-4 sm:p-5">
       {/* Header row */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold text-ink-900 leading-snug">{job.title}</h3>
+          <h3 className="break-words text-base font-semibold text-ink-900 leading-snug">{job.title}</h3>
           <p className="mt-0.5 text-sm text-ink-500">
             {job.company} · {job.location}
           </p>
@@ -78,7 +78,7 @@ export function JobCard({ match, job: jobProp, onShortlist, shortlisted, pending
       )}
 
       {/* Footer: skills + actions */}
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
           {job.must_have_skills.slice(0, 5).map((s) => (
             <span key={s} className="pill-accent">{s}</span>
@@ -87,13 +87,14 @@ export function JobCard({ match, job: jobProp, onShortlist, shortlisted, pending
             <span className="pill text-ink-400">+{job.must_have_skills.length - 5}</span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {rightSlot}
           {onShortlist && (
             <button
               onClick={onShortlist}
               disabled={shortlisted || pending}
-              className={shortlisted ? "btn-ghost text-emerald-600 !cursor-default" : "btn-primary"}
+              aria-busy={pending || undefined}
+              className={shortlisted ? "btn-ghost text-emerald-700 !cursor-default" : "btn-primary"}
             >
               {shortlisted ? (
                 <>
@@ -109,6 +110,6 @@ export function JobCard({ match, job: jobProp, onShortlist, shortlisted, pending
           )}
         </div>
       </div>
-    </div>
+    </article>
   );
 }

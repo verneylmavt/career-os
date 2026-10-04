@@ -32,6 +32,12 @@ describe("shared components", () => {
   it("shows a loading label when supplied", () => {
     render(<Spinner label="Loading jobs…" />);
     expect(screen.getByText("Loading jobs…")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading jobs…");
+  });
+
+  it("announces an unlabeled spinner", () => {
+    render(<Spinner />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
   });
 
   it("renders fit context and invokes the shortlist action", async () => {
@@ -68,6 +74,7 @@ describe("shared components", () => {
 
   it("links every primary route and highlights the current route", () => {
     render(<NavBar />);
+    expect(screen.getByRole("navigation", { name: "Primary" })).toBeVisible();
     for (const [label, href] of [
       ["Dashboard", "/"],
       ["Discover", "/discover"],
@@ -78,6 +85,7 @@ describe("shared components", () => {
       expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href);
     }
     expect(screen.getByRole("link", { name: "Discover" })).toHaveClass("bg-ink-900");
+    expect(screen.getByRole("link", { name: "Discover" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveClass("bg-ink-900");
   });
 });

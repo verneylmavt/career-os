@@ -9,6 +9,16 @@
   body {
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+  :focus-visible {
+    outline: 2px solid #6d42e5;
+    outline-offset: 3px;
+  }
+  button:disabled, input:disabled, textarea:disabled, select:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  button:disabled:active { transform: none; }
+  main { scroll-margin-top: 12rem; }
 }
 
 @layer components {
@@ -17,7 +27,7 @@
     @apply text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl;
   }
   .page-subtitle {
-    @apply mt-1.5 text-sm text-ink-500;
+    @apply mt-1.5 text-sm text-ink-600;
   }
   .section-title {
     @apply text-base font-semibold text-ink-900;
@@ -33,7 +43,7 @@
 
   /* ---- Buttons ---- */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold
+    @apply inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold
            transition-all duration-150 active:scale-[0.97] select-none;
   }
   .btn-primary {
@@ -85,12 +95,12 @@
     @apply input min-h-[120px] resize-y leading-relaxed;
   }
   .label {
-    @apply block text-xs font-semibold uppercase tracking-wider text-ink-400 mb-1.5;
+    @apply block text-xs font-semibold uppercase tracking-wider text-ink-600 mb-1.5;
   }
 
   /* ---- Empty state ---- */
   .empty-state {
-    @apply card p-12 flex flex-col items-center justify-center text-center gap-3;
+    @apply card p-5 sm:p-12 flex flex-col items-center justify-center text-center gap-3;
   }
 
   /* ---- Score badge ---- */
@@ -106,6 +116,22 @@
   .icon-bg-emerald { @apply bg-emerald-100 text-emerald-600; }
   .icon-bg-amber   { @apply bg-amber-100  text-amber-600;    }
   .icon-bg-sky     { @apply bg-sky-100    text-sky-600;      }
+}
+
+.skip-link {
+  @apply sr-only;
+}
+.skip-link:focus {
+  @apply not-sr-only fixed left-4 top-4 z-50 rounded-xl bg-white px-4 py-3 font-semibold text-accent shadow-lg;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ---- Loading dots ---- */
