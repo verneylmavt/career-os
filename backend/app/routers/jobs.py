@@ -1,19 +1,17 @@
 """Job discovery, matching, and shortlist."""
-from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
-from ..data_utils import load_jobs_dict, load_jobs_list
-from ..services.openai_client import chat_json, chat_text
-from ..store import store
+from ..config import PROMPT_VERSION, generation_model
+from ..data_utils import load_jobs_list
+from ..dependencies import get_job, get_provider, get_repository, legacy_json
+from ..repository import SQLiteRepository
+from ..schemas import RegenerateIn, SearchIn, ShortlistIn, ShortlistPatch
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
-
-
-class SearchIn(BaseModel):
-    query: str
 
 
 class JobOut(BaseModel):
@@ -22,12 +20,6 @@ class JobOut(BaseModel):
     matched_skills: list[str]
     missing_skills: list[str]
     reason: str
-
-
-class ShortlistIn(BaseModel):
-    job_id: str
-    status: str = "saved"  # saved | applied | interviewing | offer | rejected
-    notes: str | None = None
 
 
 def _score_job(profile: dict[str, Any], job: dict[str, Any], filters: dict[str, Any]) -> tuple[int, list[str], list[str], str]:
@@ -80,13 +72,14 @@ def _score_job(profile: dict[str, Any], job: dict[str, Any], filters: dict[str, 
 
 
 @router.post("/search", response_model=list[JobOut])
-def search_jobs(body: SearchIn) -> list[dict[str, Any]]:
+async def search_jobs(body: SearchIn, repository: SQLiteRepository = Depends(get_repository), provider=Depends(get_provider)) -> list[dict[str, Any]]:
     """Natural-language search → structured filters → ranked jobs with explanations."""
     if not body.query.strip():
         raise HTTPException(status_code=400, detail="Query must not be empty")
 
     # 1. Extract structured filters with LLM
-    filters = chat_json(
+    filters = await legacy_json(
+        provider,
         system=(
             "You convert a job-seeker's natural-language wish into structured filters. "
             "Only fill fields that are clearly expressed. Use these enums where applicable: "
@@ -120,7 +113,7 @@ def search_jobs(body: SearchIn) -> list[dict[str, Any]]:
         candidates = jobs  # fall back to all jobs so demo isn't empty
 
     # 3. Score + rank
-    profile = store.profile
+    profile = await run_in_threadpool(repository.get_profile)
     scored = []
     for j in candidates:
         score, matched, missing, reason = _score_job(profile, j, filters)
@@ -136,52 +129,48 @@ def search_jobs(body: SearchIn) -> list[dict[str, Any]]:
 
 
 @router.get("/shortlist")
-def list_shortlist() -> list[dict[str, Any]]:
-    return list(store.shortlist.values())
+def list_shortlist(repository: SQLiteRepository = Depends(get_repository)) -> list[dict[str, Any]]:
+    return repository.list_shortlist()
+
+
+@router.get("")
+def job_contexts(repository: SQLiteRepository = Depends(get_repository)) -> list[dict[str, Any]]:
+    return repository.job_contexts()
 
 
 @router.post("/shortlist")
-def add_to_shortlist(body: ShortlistIn) -> dict[str, Any]:
-    jobs = load_jobs_dict()
-    job = jobs.get(body.job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    entry = {
-        "job": job,
-        "status": body.status,
-        "notes": body.notes or "",
-        "added_at": datetime.utcnow().isoformat(),
-    }
-    store.shortlist[body.job_id] = entry
-    return entry
+def add_to_shortlist(body: ShortlistIn, repository: SQLiteRepository = Depends(get_repository)) -> dict[str, Any]:
+    return repository.add_shortlist(get_job(body.job_id), body.status, body.notes or "")
 
 
 @router.patch("/shortlist/{job_id}")
-def update_shortlist(job_id: str, body: ShortlistIn) -> dict[str, Any]:
-    if job_id not in store.shortlist:
-        raise HTTPException(status_code=404, detail="Not in shortlist")
-    entry = store.shortlist[job_id]
-    entry["status"] = body.status
-    if body.notes is not None:
-        entry["notes"] = body.notes
-    return entry
+def update_shortlist(job_id: str, body: ShortlistPatch, repository: SQLiteRepository = Depends(get_repository)) -> dict[str, Any]:
+    return repository.patch_shortlist(job_id, body.model_dump(exclude_unset=True))
 
 
 @router.delete("/shortlist/{job_id}")
-def remove_from_shortlist(job_id: str) -> dict[str, str]:
-    store.shortlist.pop(job_id, None)
+def remove_from_shortlist(job_id: str, repository: SQLiteRepository = Depends(get_repository)) -> dict[str, str]:
+    get_job(job_id)
+    repository.remove_shortlist(job_id)
     return {"status": "ok"}
 
 
 @router.get("/{job_id}/dossier")
-def company_dossier(job_id: str) -> dict[str, Any]:
-    """Generate a 'what to know before your interview' brief."""
-    jobs = load_jobs_dict()
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+def get_company_dossier(job_id: str, repository: SQLiteRepository = Depends(get_repository)) -> dict[str, Any] | None:
+    get_job(job_id)
+    return repository.get_artifact("dossier", job_id)
 
-    data = chat_json(
+
+@router.post("/{job_id}/dossier")
+async def company_dossier(job_id: str, body: RegenerateIn, repository: SQLiteRepository = Depends(get_repository), provider=Depends(get_provider)) -> dict[str, Any]:
+    job = get_job(job_id)
+    ticket = await run_in_threadpool(repository.begin_generation, "dossier", job_id, {}, generation_model(), PROMPT_VERSION)
+    if not body.regenerate:
+        cached = await run_in_threadpool(repository.cached_artifact, ticket)
+        if cached is not None:
+            return cached
+    data = await legacy_json(
+        provider,
         system=(
             "You are an interview-prep researcher. Given a company + role, produce a concise dossier. "
             "When unsure, write 'Likely…' rather than fabricating specifics."
@@ -195,4 +184,4 @@ def company_dossier(job_id: str) -> dict[str, Any]:
             '"smart_questions_to_ask": string[], "watch_outs": string[] }'
         ),
     )
-    return {"job_id": job_id, **data}
+    return await run_in_threadpool(repository.commit_artifact, ticket, data)

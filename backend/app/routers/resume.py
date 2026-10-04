@@ -1,122 +1,86 @@
-"""Resume tailoring + cover letter generation."""
+"""Generate application documents explicitly and restore saved versions cheaply."""
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from starlette.concurrency import run_in_threadpool
 
-from ..data_utils import load_jobs_dict
-from ..services.openai_client import chat_text
-from ..store import store
+from ..config import PROMPT_VERSION, generation_model
+from ..dependencies import get_job, get_provider, get_repository, legacy_text
+from ..repository import SQLiteRepository
+from ..schemas import CoverLetterIn, GenerationIn, Tone
 
 router = APIRouter(prefix="/api/resume", tags=["resume"])
+TailorIn = GenerationIn
 
 
-class TailorIn(BaseModel):
-    job_id: str
+@router.get("/{job_id}/documents")
+def get_documents(job_id: str, tone: Tone = "warm", repository: SQLiteRepository = Depends(get_repository)) -> dict[str, Any]:
+    get_job(job_id)
+    return {"job_id": job_id, "tailored_resume": repository.get_artifact("tailored_resume", job_id), "cover_letter": repository.get_artifact("cover_letter", job_id, {"tone": tone})}
 
 
-class TailorOut(BaseModel):
-    job_id: str
-    tailored_resume_md: str
-    ats_keywords: list[str]
-    summary_rewrite: str
-
-
-@router.post("/tailor", response_model=TailorOut)
-def tailor_resume(body: TailorIn) -> dict[str, Any]:
-    job = load_jobs_dict().get(body.job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    resume_text = store.profile.get("resume_text") or ""
-    if not resume_text:
+@router.post("/tailor")
+async def tailor_resume(body: GenerationIn, repository: SQLiteRepository = Depends(get_repository), provider=Depends(get_provider)) -> dict[str, Any]:
+    job = get_job(body.job_id)
+    profile = await run_in_threadpool(repository.get_profile)
+    if not profile["resume_text"]:
         raise HTTPException(status_code=400, detail="Upload a resume first")
-
-    prompt = (
-        f"JOB POSTING\n----------\n"
-        f"Title: {job['title']} @ {job['company']} ({job['location']}, {job['work_mode']})\n"
-        f"Must-have skills: {', '.join(job.get('must_have_skills', []))}\n"
-        f"Nice-to-haves: {', '.join(job.get('nice_to_have_skills', []))}\n"
-        f"Description:\n{job['description']}\n\n"
-        f"Responsibilities:\n- " + "\n- ".join(job.get('responsibilities', [])) + "\n\n"
-        f"CANDIDATE RESUME\n----------\n{resume_text[:6000]}\n\n"
-        "Task: Rewrite this resume in clean Markdown to maximize fit for THIS specific role. "
-        "Keep all factual claims grounded in the original resume — do not invent experience, "
-        "but reorder, reframe, and amplify what's relevant. Lead with a tailored 3-sentence "
-        "professional summary. Use ATS-friendly section headings (Summary, Skills, Experience, "
-        "Projects, Education). End with a comma-separated list of the top 15 ATS keywords to include."
-    )
-
-    resp = chat_text(
-        system=(
-            "You are an expert resume writer. You only restate truths already present in the "
-            "candidate's resume, but you reframe them with the precise vocabulary of the target role."
-        ),
-        user=prompt,
+    ticket = await run_in_threadpool(repository.begin_generation, "tailored_resume", body.job_id, {}, generation_model(), PROMPT_VERSION, expected_revision=profile["revision"])
+    if not body.regenerate:
+        cached = await run_in_threadpool(repository.cached_artifact, ticket)
+        if cached is not None:
+            return cached
+    response = await legacy_text(
+        provider,
+        system="You are an expert resume writer. Only restate truths already present in the candidate's resume, using vocabulary of the target role.",
+        user=(f"JOB POSTING\nTitle: {job['title']} @ {job['company']} ({job['location']}, {job['work_mode']})\n"
+              f"Must-have skills: {', '.join(job.get('must_have_skills', []))}\nDescription: {job['description']}\n"
+              f"CANDIDATE RESUME\n{profile['resume_text']}\n"
+              "Rewrite in Markdown with a tailored summary, Skills, Experience, Projects and Education. Do not invent facts. End with ATS Keywords: followed by a comma-separated keyword list."),
         temperature=0.5,
     )
-
-    # Heuristic split: last paragraph after 'ATS Keywords' line is the keyword list
-    ats_keywords: list[str] = []
-    tailored = resp
-    for marker in ["ATS Keywords:", "ATS keywords:", "**ATS Keywords**:", "## ATS Keywords"]:
-        if marker in resp:
-            head, _, tail = resp.partition(marker)
+    if not response.strip():
+        raise HTTPException(status_code=502, detail="Generated resume was empty. Try again.")
+    tailored, keywords = response, []
+    for marker in ("ATS Keywords:", "ATS keywords:", "**ATS Keywords**:", "## ATS Keywords"):
+        if marker in response:
+            head, _, tail = response.partition(marker)
             tailored = head.rstrip()
-            ats_keywords = [k.strip(" \n*-•") for k in tail.replace("\n", ",").split(",") if k.strip(" \n*-•")][:20]
+            keywords = [item.strip(" \n*-•") for item in tail.replace("\n", ",").split(",") if item.strip(" \n*-•")][:20]
             break
-
-    # Pull the first H1/H2/section that looks like Summary
-    summary_lines: list[str] = []
-    collecting = False
+    summary_lines, collecting = [], False
     for line in tailored.splitlines():
-        low = line.strip().lower()
-        if low.startswith(("## summary", "**summary**", "# summary", "summary")):
+        if line.strip().lower().startswith(("## summary", "**summary**", "# summary", "summary")):
             collecting = True
             continue
         if collecting:
-            if line.strip().startswith("#") or line.strip().startswith("**"):
+            if line.strip().startswith(("#", "**")):
                 break
             if line.strip():
                 summary_lines.append(line.strip())
             if len(summary_lines) >= 5:
                 break
-    summary_rewrite = " ".join(summary_lines).strip()
-
-    store.tailored_resumes[body.job_id] = tailored
-    return {
-        "job_id": body.job_id,
-        "tailored_resume_md": tailored,
-        "ats_keywords": ats_keywords,
-        "summary_rewrite": summary_rewrite,
-    }
-
-
-class CoverLetterIn(BaseModel):
-    job_id: str
-    tone: str = "warm"  # warm | direct | formal
+    payload = {"tailored_resume_md": tailored, "ats_keywords": keywords, "summary_rewrite": " ".join(summary_lines)}
+    return await run_in_threadpool(repository.commit_artifact, ticket, payload)
 
 
 @router.post("/cover-letter")
-def cover_letter(body: CoverLetterIn) -> dict[str, Any]:
-    job = load_jobs_dict().get(body.job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    resume_text = store.profile.get("resume_text") or ""
-    if not resume_text:
+async def cover_letter(body: CoverLetterIn, repository: SQLiteRepository = Depends(get_repository), provider=Depends(get_provider)) -> dict[str, Any]:
+    job = get_job(body.job_id)
+    profile = await run_in_threadpool(repository.get_profile)
+    if not profile["resume_text"]:
         raise HTTPException(status_code=400, detail="Upload a resume first")
-
-    text = chat_text(
-        system=(
-            "You write concise, sincere cover letters. Avoid clichés ('I am writing to apply…'). "
-            "Open with a specific reason this role excites the candidate. Three short paragraphs."
-        ),
-        user=(
-            f"Role: {job['title']} @ {job['company']}\n"
-            f"Job description: {job['description']}\n\n"
-            f"Candidate resume:\n{resume_text[:4000]}\n\n"
-            f"Tone: {body.tone}. Length: under 250 words."
-        ),
+    ticket = await run_in_threadpool(repository.begin_generation, "cover_letter", body.job_id, {"tone": body.tone}, generation_model(), PROMPT_VERSION, expected_revision=profile["revision"])
+    if not body.regenerate:
+        cached = await run_in_threadpool(repository.cached_artifact, ticket)
+        if cached is not None:
+            return cached
+    text = await legacy_text(
+        provider,
+        system="Write concise, sincere cover letters. Use only candidate facts in the resume. Avoid clichés. Write three short paragraphs.",
+        user=f"Role: {job['title']} @ {job['company']}\nDescription: {job['description']}\nCandidate resume:\n{profile['resume_text']}\nTone: {body.tone}. Under 250 words.",
         temperature=0.7,
     )
-    store.cover_letters[body.job_id] = text
-    return {"job_id": body.job_id, "cover_letter": text}
+    if not text.strip():
+        raise HTTPException(status_code=502, detail="Generated cover letter was empty. Try again.")
+    return await run_in_threadpool(repository.commit_artifact, ticket, {"cover_letter": text})

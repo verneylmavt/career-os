@@ -1,85 +1,67 @@
-"""Mock interview: generate questions + evaluate answers."""
+"""Durable interview sessions, editable drafts and canonical evaluations."""
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from starlette.concurrency import run_in_threadpool
 
-from ..data_utils import load_jobs_dict
-from ..services.openai_client import chat_json
-from ..store import store
+from ..config import PROMPT_VERSION, generation_model
+from ..dependencies import get_job, get_provider, get_repository, legacy_json
+from ..repository import SQLiteRepository
+from ..schemas import DraftIn, EvaluateIn, GenerationIn
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
-
-
-class QuestionsIn(BaseModel):
-    job_id: str
+QuestionsIn = GenerationIn
 
 
 @router.post("/questions")
-def generate_questions(body: QuestionsIn) -> dict[str, Any]:
-    job = load_jobs_dict().get(body.job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    data = chat_json(
-        system=(
-            "You are a senior hiring manager. Generate 6 mock interview questions tailored to "
-            "this specific role: 2 behavioral, 2 role-specific technical, 2 deep-dive on the "
-            "key skills required. Mix difficulty."
-        ),
-        user=(
-            f"Role: {job['title']} @ {job['company']}\n"
-            f"Seniority: {job['seniority']}\n"
-            f"Must-have skills: {', '.join(job.get('must_have_skills', []))}\n"
-            f"Description: {job['description']}"
-        ),
-        schema_hint=(
-            '{ "questions": [ { "id": string, "category": "behavioral"|"technical"|"role-specific", '
-            '"question": string, "what_we_look_for": string } ] }'
-        ),
+async def generate_questions(body: GenerationIn, repository: SQLiteRepository = Depends(get_repository), provider=Depends(get_provider)) -> dict[str, Any]:
+    job = get_job(body.job_id)
+    ticket = await run_in_threadpool(repository.begin_generation, "questions", body.job_id, {}, generation_model(), PROMPT_VERSION)
+    if not body.regenerate:
+        cached = await run_in_threadpool(repository.cached_session, ticket)
+        if cached is not None:
+            return cached
+    data = await legacy_json(
+        provider,
+        system="You are a senior hiring manager. Generate 6 mock interview questions for this role: 2 behavioral, 2 technical, 2 role-specific. Mix difficulty.",
+        user=f"Role: {job['title']} @ {job['company']}\nSeniority: {job['seniority']}\nSkills: {', '.join(job['must_have_skills'])}\nDescription: {job['description']}",
+        schema_hint='{ "questions": [{"id": string, "category": "behavioral"|"technical"|"role-specific", "question": string, "what_we_look_for": string}] }',
     )
-    questions = data.get("questions", [])
-    store.interview_sessions[body.job_id] = {"questions": questions, "answers": {}, "scores": {}}
-    return {"job_id": body.job_id, "questions": questions}
-
-
-class EvaluateIn(BaseModel):
-    job_id: str
-    question_id: str
-    question: str
-    answer: str
-
-
-@router.post("/evaluate")
-def evaluate_answer(body: EvaluateIn) -> dict[str, Any]:
-    if not body.answer.strip():
-        raise HTTPException(status_code=400, detail="Answer cannot be empty")
-
-    data = chat_json(
-        system=(
-            "You are a fair, kind interviewer. Evaluate the candidate's answer on a 1-10 scale. "
-            "Focus on: clarity, specificity (STAR-style examples for behavioral), technical accuracy "
-            "(for technical), and alignment with the role. Be constructive — every weakness should "
-            "come with a concrete way to improve."
-        ),
-        user=(
-            f"Interview question: {body.question}\n\n"
-            f"Candidate answer:\n{body.answer}"
-        ),
-        schema_hint=(
-            '{ "score": number, "strengths": string[], "gaps": string[], '
-            '"improved_answer_example": string }'
-        ),
-    )
-
-    session = store.interview_sessions.setdefault(
-        body.job_id, {"questions": [], "answers": {}, "scores": {}}
-    )
-    session["answers"][body.question_id] = body.answer
-    session["scores"][body.question_id] = data.get("score", 0)
-    return data
+    return await run_in_threadpool(repository.create_session, ticket, data.get("questions", []))
 
 
 @router.get("/{job_id}/session")
-def get_session(job_id: str) -> dict[str, Any]:
-    return store.interview_sessions.get(job_id, {"questions": [], "answers": {}, "scores": {}})
+def get_session(job_id: str, session_id: str | None = None, repository: SQLiteRepository = Depends(get_repository)) -> dict[str, Any]:
+    get_job(job_id)
+    return repository.get_session(job_id, session_id)
+
+
+@router.patch("/{job_id}/session/answers/{question_id}")
+def save_draft(job_id: str, question_id: str, body: DraftIn, repository: SQLiteRepository = Depends(get_repository)) -> dict[str, Any]:
+    get_job(job_id)
+    return repository.save_answer(job_id, body.session_id, question_id, body.answer, body.expected_version)
+
+
+@router.post("/evaluate")
+async def evaluate_answer(body: EvaluateIn, repository: SQLiteRepository = Depends(get_repository), provider=Depends(get_provider)) -> dict[str, Any]:
+    get_job(body.job_id)
+    session = await run_in_threadpool(repository.get_session, body.job_id, body.session_id)
+    question = next((question for question in session["questions"] if question["id"] == body.question_id), None)
+    if question is None:
+        raise HTTPException(status_code=404, detail="Question not found in this session")
+    if body.question is not None and body.question != question["question"]:
+        raise HTTPException(status_code=422, detail="Question text must match the saved question")
+    session = await run_in_threadpool(repository.save_answer, body.job_id, body.session_id, body.question_id, body.answer)
+    ticket = await run_in_threadpool(repository.begin_generation, "evaluation", body.job_id, {}, generation_model(), PROMPT_VERSION, session_id=body.session_id, question_id=body.question_id, answer_version=session["answer_versions"][body.question_id])
+    data = await legacy_json(
+        provider,
+        system="You are a fair, kind interviewer. Evaluate the candidate's answer on a 1-10 scale for clarity, specificity, role alignment and technical accuracy. Be constructive.",
+        user=f"Interview question: {question['question']}\nCandidate answer:\n{body.answer}",
+        schema_hint='{ "score": number, "strengths": string[], "gaps": string[], "improved_answer_example": string }',
+    )
+    if not isinstance(data.get("score"), (int, float)) or isinstance(data["score"], bool) or not 1 <= data["score"] <= 10:
+        raise HTTPException(status_code=502, detail="Generated feedback was invalid. Try again.")
+    score = data["score"]
+    rubric = data.get("rubric") or {"clarity": score, "specificity": score, "role_alignment": score, "technical_accuracy": None if question.get("category") == "behavioral" else score}
+    data.update(rubric=rubric, submitted_answer=body.answer)
+    return await run_in_threadpool(repository.commit_feedback, ticket, data)

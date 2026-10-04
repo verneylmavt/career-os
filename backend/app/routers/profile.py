@@ -1,91 +1,68 @@
-"""Profile + resume upload. Parses PDF or accepts pasted text, extracts structured profile via LLM."""
+"""Editable profile and resume extraction, persisted across process restarts."""
 import io
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pypdf import PdfReader
+from starlette.concurrency import run_in_threadpool
 
-from ..services.openai_client import chat_json
-from ..store import store
+from ..config import PROMPT_VERSION, generation_model
+from ..dependencies import get_provider, get_repository, legacy_json
+from ..repository import SQLiteRepository
+from ..schemas import ProfileOut, ProfileUpdate
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
 
-class ProfileOut(BaseModel):
-    name: str
-    email: str
-    resume_text: str
-    skills: list[str]
-    experience_years: int
-    preferred_location: str
-
-
-class ProfileUpdate(BaseModel):
-    name: str | None = None
-    email: str | None = None
-    resume_text: str | None = None
-    skills: list[str] | None = None
-    experience_years: int | None = None
-    preferred_location: str | None = None
-
-
 @router.get("", response_model=ProfileOut)
-def get_profile() -> dict[str, Any]:
-    return store.profile
+def get_profile(repository: SQLiteRepository = Depends(get_repository)) -> dict[str, Any]:
+    return repository.get_profile()
 
 
 @router.patch("", response_model=ProfileOut)
-def update_profile(patch: ProfileUpdate) -> dict[str, Any]:
-    for k, v in patch.model_dump(exclude_unset=True).items():
-        store.profile[k] = v
-    return store.profile
+def update_profile(patch: ProfileUpdate, repository: SQLiteRepository = Depends(get_repository)) -> dict[str, Any]:
+    return repository.patch_profile(patch.model_dump(exclude_unset=True))
+
+
+def read_pdf(data: bytes) -> str:
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not read PDF. Provide a readable PDF or paste the resume text.") from exc
 
 
 @router.post("/upload", response_model=ProfileOut)
 async def upload_resume(
     file: UploadFile | None = File(default=None),
     pasted_text: str | None = Form(default=None),
+    repository: SQLiteRepository = Depends(get_repository),
+    provider=Depends(get_provider),
 ) -> dict[str, Any]:
-    """Accept a PDF file OR pasted text. Extract a structured profile via LLM."""
-    text = ""
+    profile = await run_in_threadpool(repository.get_profile)
     if file is not None:
         data = await file.read()
         if file.filename and file.filename.lower().endswith(".pdf"):
-            try:
-                reader = PdfReader(io.BytesIO(data))
-                text = "\n".join((page.extract_text() or "") for page in reader.pages)
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Could not read PDF: {e}")
+            text = await run_in_threadpool(read_pdf, data)
         else:
-            text = data.decode("utf-8", errors="ignore")
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise HTTPException(status_code=400, detail="Text files must use UTF-8 encoding") from exc
     elif pasted_text:
         text = pasted_text
     else:
         raise HTTPException(status_code=400, detail="Provide a file or pasted_text")
-
     text = text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Resume appears to be empty")
-
-    extracted = chat_json(
-        system=(
-            "You are a resume parser. Extract a candidate's structured profile from raw resume text. "
-            "Be conservative: if a field is missing, return a sensible empty/zero default."
-        ),
-        user=f"Resume text:\n\n{text[:8000]}",
-        schema_hint=(
-            '{ "name": string, "email": string, "skills": string[], '
-            '"experience_years": number, "preferred_location": string }'
-        ),
+    ticket = await run_in_threadpool(repository.begin_generation, "profile_upload", "", {}, generation_model(), PROMPT_VERSION, expected_revision=profile["revision"])
+    extracted = await legacy_json(
+        provider,
+        system="You are a resume parser. Extract a candidate's structured profile from raw resume text. Be conservative: missing fields must be empty or zero.",
+        user=f"Resume text:\n\n{text}",
+        schema_hint='{ "name": string, "email": string, "skills": string[], "experience_years": integer, "preferred_location": string }',
     )
-
-    store.profile.update({
-        "name": extracted.get("name", "") or store.profile.get("name", ""),
-        "email": extracted.get("email", "") or store.profile.get("email", ""),
-        "skills": extracted.get("skills") or store.profile.get("skills", []),
-        "experience_years": int(extracted.get("experience_years") or store.profile.get("experience_years") or 0),
-        "preferred_location": extracted.get("preferred_location", "") or store.profile.get("preferred_location", ""),
-        "resume_text": text,
-    })
-    return store.profile
+    facts = {key: extracted[key] for key in ("name", "email", "skills", "experience_years", "preferred_location") if key in extracted}
+    facts["resume_text"] = text
+    return await run_in_threadpool(repository.commit_profile, ticket, facts)
