@@ -59,11 +59,11 @@ export function JobCard({ match, job: jobProp, onShortlist, shortlisted, rightSl
       {/* Why this fits */}
       {match && (
         <div className={`mt-3 rounded-xl p-3 text-xs ${
-          match.score >= 60
+          match.score !== null && match.score >= 60
             ? "bg-emerald-50 border border-emerald-100"
             : "bg-ink-50 border border-ink-100"
         }`}>
-          <p className="font-semibold text-ink-800 mb-0.5">Why this fits</p>
+          <p className="font-semibold text-ink-800 mb-0.5">Skill coverage</p>
           <p className="text-ink-600">{match.reason}</p>
           {match.missing_skills.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">

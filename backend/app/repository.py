@@ -313,3 +313,13 @@ class SQLiteRepository:
     def preparation_counts(self) -> dict[str, int]:
         with self.connection() as db:
             return {kind: db.execute("SELECT COUNT(DISTINCT job_id) FROM artifacts WHERE kind=?", (kind,)).fetchone()[0] for kind in ("tailored_resume", "cover_letter")}
+
+    def dashboard_snapshot(self) -> dict[str, Any]:
+        """One short read snapshot keeps metrics consistent with the profile and stages."""
+        with self.connection() as db:
+            db.execute("BEGIN")
+            profile = self._profile(db)
+            shortlist = [self._shortlist_row(row) for row in db.execute("SELECT s.*, j.payload FROM shortlist s JOIN jobs j ON j.id=s.job_id ORDER BY s.added_at, s.job_id")]
+            feedback = [json.loads(row[0]) for row in db.execute("SELECT a.feedback FROM answers a JOIN sessions s ON s.id=a.session_id JOIN shortlist l ON l.job_id=s.job_id WHERE s.is_current=1 AND s.profile_revision=? AND l.status IN ('saved','applied','interviewing') AND a.feedback IS NOT NULL", (profile["revision"],))]
+            counts = {kind: db.execute("SELECT COUNT(DISTINCT job_id) FROM artifacts WHERE kind=?", (kind,)).fetchone()[0] for kind in ("tailored_resume", "cover_letter")}
+            return {"profile": profile, "shortlist": shortlist, "feedback": feedback, "counts": counts}

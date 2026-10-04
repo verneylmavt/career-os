@@ -1,146 +1,49 @@
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
-  }
-  return res.json() as Promise<T>;
-}
+import { z } from "zod";
+import { ApiError, request } from "./api-client";
+import { contextSchema, documentsSchema, dossierSchema, feedbackSchema, letterSchema, profileSchema, resumeSchema, searchSchema, sessionSchema, shortlistSchema, statsSchema, type Profile, type ShortlistEntry } from "./contracts";
 
-export type Job = {
-  id: string;
-  title: string;
-  company: string;
-  location: string;
-  work_mode: string;
-  employment_type: string;
-  seniority: string;
-  salary_range: string;
-  posted_at: string;
-  source: string;
-  url: string;
-  must_have_skills: string[];
-  nice_to_have_skills: string[];
-  description: string;
-  responsibilities: string[];
-  requirements: string[];
-};
-
-export type JobMatch = {
-  job: Job;
-  score: number;
-  matched_skills: string[];
-  missing_skills: string[];
-  reason: string;
-};
-
-export type ShortlistEntry = {
-  job: Job;
-  status: "saved" | "applied" | "interviewing" | "offer" | "rejected";
-  notes: string;
-  added_at: string;
-};
-
-export type Profile = {
-  name: string;
-  email: string;
-  resume_text: string;
-  skills: string[];
-  experience_years: number;
-  preferred_location: string;
-};
-
-export type DashboardStats = {
-  pipeline: Record<string, number>;
-  total_saved: number;
-  tailored_resumes: number;
-  cover_letters: number;
-  interview_readiness: number;
-  top_skill_gaps: { skill: string; count: number }[];
-  has_profile: boolean;
-};
-
-export type InterviewQuestion = {
-  id: string;
-  category: "behavioral" | "technical" | "role-specific";
-  question: string;
-  what_we_look_for: string;
-};
-
-export type AnswerFeedback = {
-  score: number;
-  strengths: string[];
-  gaps: string[];
-  improved_answer_example: string;
-};
-
-export type Dossier = {
-  job_id: string;
-  mission_guess: string;
-  talking_points: string[];
-  smart_questions_to_ask: string[];
-  watch_outs: string[];
-};
+export type * from "./contracts";
+export { ApiError, errorMessage, isCancelled } from "./api-client";
+const json = (value: unknown) => JSON.stringify(value);
+const jobPath = (jobId: string) => encodeURIComponent(jobId);
 
 export const api = {
-  // profile
-  getProfile: () => request<Profile>("/api/profile"),
-  updateProfile: (patch: Partial<Profile>) =>
-    request<Profile>("/api/profile", { method: "PATCH", body: JSON.stringify(patch) }),
-  uploadResume: async (form: FormData) => {
-    const res = await fetch("/api/profile/upload", { method: "POST", body: form });
-    if (!res.ok) throw new Error(await res.text());
-    return (await res.json()) as Profile;
+  getProfile: (signal?: AbortSignal) => request("/api/profile", profileSchema, { signal }),
+  updateProfile: (patch: Partial<Profile> & { expected_revision?: number }, signal?: AbortSignal) =>
+    request("/api/profile", profileSchema, { method: "PATCH", body: json(patch), signal }),
+  uploadResume: (form: FormData, signal?: AbortSignal) =>
+    request("/api/profile/upload", profileSchema, { method: "POST", body: form, signal }),
+  search: (query: string, filters: { location?: string; work_mode?: string; seniority?: string } = {}, signal?: AbortSignal) =>
+    request("/api/jobs/search", searchSchema, { method: "POST", body: json({ query, ...filters }), signal }),
+  contexts: (signal?: AbortSignal) => request("/api/jobs", z.array(contextSchema), { signal }),
+  shortlist: (signal?: AbortSignal) => request("/api/jobs/shortlist", z.array(shortlistSchema), { signal }),
+  addToShortlist: (job_id: string, status: ShortlistEntry["status"] = "saved", notes = "", signal?: AbortSignal) =>
+    request("/api/jobs/shortlist", shortlistSchema, { method: "POST", body: json({ job_id, status, notes }), signal }),
+  updateShortlist: (job_id: string, patch: ShortlistEntry["status"] | { status?: ShortlistEntry["status"]; notes?: string }, notes?: string, signal?: AbortSignal) =>
+    request(`/api/jobs/shortlist/${jobPath(job_id)}`, shortlistSchema, { method: "PATCH", body: json(typeof patch === "string" ? { status: patch, ...(notes !== undefined ? { notes } : {}) } : patch), signal }),
+  removeFromShortlist: (job_id: string, signal?: AbortSignal) =>
+    request(`/api/jobs/shortlist/${jobPath(job_id)}`, z.object({ status: z.string() }), { method: "DELETE", signal }),
+  dossier: (job_id: string, signal?: AbortSignal) => request(`/api/jobs/${jobPath(job_id)}/dossier`, dossierSchema.nullable(), { signal }),
+  generateDossier: (job_id: string, regenerate = false, signal?: AbortSignal) =>
+    request(`/api/jobs/${jobPath(job_id)}/dossier`, dossierSchema, { method: "POST", body: json({ regenerate }), signal }),
+  documents: (job_id: string, tone = "warm", signal?: AbortSignal) =>
+    request(`/api/resume/${jobPath(job_id)}/documents?tone=${encodeURIComponent(tone)}`, documentsSchema, { signal }),
+  tailorResume: (job_id: string, regenerate = false, signal?: AbortSignal) =>
+    request("/api/resume/tailor", resumeSchema, { method: "POST", body: json({ job_id, regenerate }), signal }),
+  coverLetter: (job_id: string, tone = "warm", regenerate = false, signal?: AbortSignal) =>
+    request("/api/resume/cover-letter", letterSchema, { method: "POST", body: json({ job_id, tone, regenerate }), signal }),
+  session: (job_id: string, session_id = "", signal?: AbortSignal) =>
+    request(`/api/interview/${jobPath(job_id)}/session${session_id ? `?session_id=${encodeURIComponent(session_id)}` : ""}`, sessionSchema, { signal }),
+  questions: (job_id: string, regenerate = false, signal?: AbortSignal) =>
+    request("/api/interview/questions", sessionSchema, { method: "POST", body: json({ job_id, regenerate }), signal }),
+  saveDraft: (job_id: string, session_id: string, question_id: string, answer: string, expected_version?: number, signal?: AbortSignal) =>
+    request(`/api/interview/${jobPath(job_id)}/session/answers/${encodeURIComponent(question_id)}`, sessionSchema, { method: "PATCH", body: json({ session_id, answer, expected_version }), signal }),
+  evaluateAnswer: (job_id: string, session_id: string, question_id: string, answer: string, regenerate = false, signal?: AbortSignal) =>
+    request("/api/interview/evaluate", feedbackSchema, { method: "POST", body: json({ job_id, session_id, question_id, answer, regenerate }), signal }),
+  evaluate: async (job_id: string, question_id: string, question: string, answer: string) => {
+    const session = await api.session(job_id);
+    if (!session.session_id) throw new ApiError("Start an interview session first.", "session_not_found", 404);
+    return request("/api/interview/evaluate", feedbackSchema, { method: "POST", body: json({ job_id, session_id: session.session_id, question_id, question, answer }) });
   },
-
-  // jobs
-  search: (query: string) =>
-    request<JobMatch[]>("/api/jobs/search", { method: "POST", body: JSON.stringify({ query }) }),
-  shortlist: () => request<ShortlistEntry[]>("/api/jobs/shortlist"),
-  addToShortlist: (job_id: string, status = "saved", notes = "") =>
-    request<ShortlistEntry>("/api/jobs/shortlist", {
-      method: "POST",
-      body: JSON.stringify({ job_id, status, notes }),
-    }),
-  updateShortlist: (job_id: string, status: ShortlistEntry["status"], notes?: string) =>
-    request<ShortlistEntry>(`/api/jobs/shortlist/${job_id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ job_id, status, notes }),
-    }),
-  removeFromShortlist: (job_id: string) =>
-    request<{ status: string }>(`/api/jobs/shortlist/${job_id}`, { method: "DELETE" }),
-  dossier: (job_id: string) => request<Dossier>(`/api/jobs/${job_id}/dossier`),
-
-  // resume
-  tailorResume: (job_id: string) =>
-    request<{
-      job_id: string;
-      tailored_resume_md: string;
-      ats_keywords: string[];
-      summary_rewrite: string;
-    }>("/api/resume/tailor", { method: "POST", body: JSON.stringify({ job_id }) }),
-  coverLetter: (job_id: string, tone = "warm") =>
-    request<{ job_id: string; cover_letter: string }>("/api/resume/cover-letter", {
-      method: "POST",
-      body: JSON.stringify({ job_id, tone }),
-    }),
-
-  // interview
-  questions: (job_id: string) =>
-    request<{ job_id: string; questions: InterviewQuestion[] }>("/api/interview/questions", {
-      method: "POST",
-      body: JSON.stringify({ job_id }),
-    }),
-  evaluate: (job_id: string, question_id: string, question: string, answer: string) =>
-    request<AnswerFeedback>("/api/interview/evaluate", {
-      method: "POST",
-      body: JSON.stringify({ job_id, question_id, question, answer }),
-    }),
-
-  // dashboard
-  stats: () => request<DashboardStats>("/api/dashboard/stats"),
+  stats: (signal?: AbortSignal) => request("/api/dashboard/stats", statsSchema, { signal }),
 };

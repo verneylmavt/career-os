@@ -17,6 +17,8 @@ export default function DiscoverPage() {
   const [err, setErr] = useState<string | null>(null);
   const [shortlisted, setShortlisted] = useState<Set<string>>(new Set());
   const [hasSearched, setHasSearched] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [filters, setFilters] = useState({ location: "", work_mode: "", seniority: "" });
 
   useEffect(() => {
     api
@@ -32,8 +34,9 @@ export default function DiscoverPage() {
     setErr(null);
     setHasSearched(true);
     try {
-      const r = await api.search(query);
-      setResults(r);
+      const r = await api.search(query, Object.fromEntries(Object.entries(filters).filter(([, value]) => value)));
+      setResults(r.results);
+      setWarnings(r.warnings);
     } catch (e: any) {
       setErr(e.message || "Search failed");
     } finally {
@@ -60,14 +63,15 @@ export default function DiscoverPage() {
       <header>
         <h1 className="page-title">Discover your next role</h1>
         <p className="page-subtitle">
-          Describe what you're looking for in plain English — we handle filters, ranking, and fit explanations.
+          Search ten curated example roles. Results reflect your request; skill coverage uses your profile.
         </p>
       </header>
 
       {/* Search card */}
       <div className="card p-5 shadow-sm">
-        <label className="label">What are you looking for?</label>
+        <label className="label" htmlFor="job-query">What are you looking for?</label>
         <textarea
+          id="job-query"
           className="textarea text-base"
           rows={3}
           value={q}
@@ -75,6 +79,11 @@ export default function DiscoverPage() {
           onKeyDown={handleKey}
           placeholder="e.g. Senior NLP engineer in Singapore, hybrid, multilingual LLMs…"
         />
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div><label className="label" htmlFor="search-location">Location</label><input id="search-location" className="input" placeholder="Any location" value={filters.location} onChange={(e) => setFilters({ ...filters, location: e.target.value })} /></div>
+          <div><label className="label" htmlFor="search-mode">Work mode</label><select id="search-mode" className="input" value={filters.work_mode} onChange={(e) => setFilters({ ...filters, work_mode: e.target.value })}><option value="">Any</option>{["Remote", "Hybrid", "On-site"].map((value) => <option key={value}>{value}</option>)}</select></div>
+          <div><label className="label" htmlFor="search-level">Seniority</label><select id="search-level" className="input" value={filters.seniority} onChange={(e) => setFilters({ ...filters, seniority: e.target.value })}><option value="">Any</option>{["Intern", "Junior", "Mid", "Mid-Senior", "Senior", "Staff"].map((value) => <option key={value}>{value}</option>)}</select></div>
+        </div>
 
         {/* Examples + CTA */}
         <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
@@ -117,6 +126,7 @@ export default function DiscoverPage() {
       {err && (
         <div className="card border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">{err}</div>
       )}
+      {warnings.map((warning) => <p key={warning} role="status" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{warning}</p>)}
 
       {/* Results */}
       {results.length > 0 && (
@@ -124,7 +134,7 @@ export default function DiscoverPage() {
           <p className="text-sm font-medium text-ink-500">
             <span className="text-ink-900 font-bold">{results.length}</span> matches found
           </p>
-          <p className="text-xs text-ink-400">Ranked by skill fit</p>
+          <p className="text-xs text-ink-600">Request relevance, then skill coverage</p>
         </div>
       )}
 

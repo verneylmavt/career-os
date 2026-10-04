@@ -1,53 +1,32 @@
-"""Aggregate dashboard stats: readiness, skill gaps, pipeline."""
+"""Transparent practice metrics for current profiles and active roles."""
 from collections import Counter
+import math
 from typing import Any
 
 from fastapi import APIRouter, Depends
 
 from ..dependencies import get_repository
 from ..repository import SQLiteRepository
+from ..services.matching import skill_key
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+STAGES = ("saved", "applied", "interviewing", "offer", "rejected")
 
 
 @router.get("/stats")
 def stats(repository: SQLiteRepository = Depends(get_repository)) -> dict[str, Any]:
-    pipeline = Counter()
-    skill_gap_counter: Counter[str] = Counter()
-    interview_scores: list[float] = []
-
-    profile = repository.get_profile()
-    shortlist = repository.list_shortlist()
-    counts = repository.preparation_counts()
-    profile_skills = {s.lower() for s in profile.get("skills", [])}
-
-    for entry in shortlist:
-        pipeline[entry["status"]] += 1
-        job = entry["job"]
-        for s in job.get("must_have_skills", []):
-            if s.lower() not in profile_skills:
-                skill_gap_counter[s] += 1
-
-    for context in repository.job_contexts():
-        sess = repository.get_session(context["job"]["id"])
-        for s in sess.get("scores", {}).values():
-            try:
-                interview_scores.append(float(s))
-            except (TypeError, ValueError):
-                pass
-
-    readiness = (
-        int(sum(interview_scores) / len(interview_scores) * 10) if interview_scores else 0
-    )
-
-    return {
-        "pipeline": dict(pipeline),
-        "total_saved": len(shortlist),
-        "tailored_resumes": counts["tailored_resume"],
-        "cover_letters": counts["cover_letter"],
-        "interview_readiness": readiness,
-        "top_skill_gaps": [
-            {"skill": s, "count": c} for s, c in skill_gap_counter.most_common(8)
-        ],
-        "has_profile": bool(profile.get("resume_text")),
-    }
+    snapshot = repository.dashboard_snapshot()
+    profile, shortlist, counts = snapshot["profile"], snapshot["shortlist"], snapshot["counts"]
+    pipeline = Counter(entry["status"] for entry in shortlist)
+    skills = {skill_key(s) for s in profile["skills"]}
+    gaps = Counter(s for entry in shortlist if entry["status"] in STAGES[:3]
+                   for s in entry["job"]["must_have_skills"] if skill_key(s) not in skills)
+    scores = [item["score"] for item in snapshot["feedback"] if isinstance(item.get("score"), (int, float))
+              and not isinstance(item["score"], bool) and math.isfinite(item["score"]) and 1 <= item["score"] <= 10]
+    practice = round(sum(scores) / len(scores) * 10) if scores else None
+    return {"pipeline": {stage: pipeline[stage] for stage in STAGES}, "total_saved": len(shortlist),
+            "tailored_resumes": counts["tailored_resume"], "cover_letters": counts["cover_letter"],
+            "interview_readiness": practice or 0, "practice_score": practice,
+            "evaluated_answer_count": len(scores),
+            "top_skill_gaps": [{"skill": skill, "count": count} for skill, count in gaps.most_common(8)],
+            "has_profile": bool(profile["resume_text"])}

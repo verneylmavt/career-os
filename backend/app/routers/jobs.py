@@ -1,5 +1,5 @@
-"""Job discovery, matching, and shortlist."""
-from typing import Any
+"""Curated job discovery and durable saved preparation."""
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -9,6 +9,8 @@ from ..data_utils import load_jobs_list
 from ..dependencies import generate_schema, get_job, get_provider, get_repository
 from ..repository import SQLiteRepository
 from ..schemas import RegenerateIn, SearchIn, ShortlistIn, ShortlistPatch
+from ..services.gemini_client import GenerationError
+from ..services.matching import local_filters, query_warnings, rank_jobs
 from ..services.model_schemas import PreparationBriefOutput, SearchFiltersOutput, generation_prompt, search_prompt
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -16,105 +18,41 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 class JobOut(BaseModel):
     job: dict[str, Any]
-    score: int
+    score: int | None
     matched_skills: list[str]
     missing_skills: list[str]
     reason: str
+    relevance: int
 
 
-def _score_job(profile: dict[str, Any], job: dict[str, Any], filters: dict[str, Any]) -> tuple[int, list[str], list[str], str]:
-    """Heuristic match score using the user's skills + soft filters from the query.
-    Returns (score 0-100, matched, missing, brief reason).
-    """
-    profile_skills = {s.lower() for s in profile.get("skills", [])}
-    must = job.get("must_have_skills", []) or []
-    nice = job.get("nice_to_have_skills", []) or []
-
-    matched_must = [s for s in must if s.lower() in profile_skills]
-    missing_must = [s for s in must if s.lower() not in profile_skills]
-    matched_nice = [s for s in nice if s.lower() in profile_skills]
-
-    skill_score = 0
-    if must:
-        skill_score = int(70 * len(matched_must) / len(must))
-    if nice:
-        skill_score += int(20 * len(matched_nice) / len(nice))
-
-    # Location & work mode soft preferences
-    bonus = 0
-    desired_location = (filters.get("location") or "").strip().lower()
-    if desired_location and desired_location in job.get("location", "").lower():
-        bonus += 5
-
-    desired_mode = (filters.get("work_mode") or "").strip().lower()
-    if desired_mode and desired_mode == job.get("work_mode", "").lower():
-        bonus += 5
-
-    desired_seniority = (filters.get("seniority") or "").strip().lower()
-    if desired_seniority and desired_seniority in job.get("seniority", "").lower():
-        bonus += 5
-
-    total = min(100, skill_score + bonus + 5)  # +5 baseline so demos never feel hopeless
-
-    reason_parts = []
-    if matched_must:
-        reason_parts.append(f"Matches {len(matched_must)}/{len(must)} must-haves ({', '.join(matched_must[:3])})")
-    if missing_must:
-        reason_parts.append(f"Gaps: {', '.join(missing_must[:3])}")
-    if desired_location and desired_location in job.get("location", "").lower():
-        reason_parts.append(f"Location fits ({job['location']})")
-    if desired_mode and desired_mode == job.get("work_mode", "").lower():
-        reason_parts.append(f"{job['work_mode']} work mode")
-    reason = "; ".join(reason_parts) or "Partial fit — explore further"
-
-    matched_skills = matched_must + matched_nice
-    return total, matched_skills, missing_must, reason
+class SearchOut(BaseModel):
+    results: list[JobOut]
+    filters: SearchFiltersOutput
+    warnings: list[str]
+    source: Literal["curated"] = "curated"
+    personalized: bool
 
 
-@router.post("/search", response_model=list[JobOut])
-async def search_jobs(body: SearchIn, repository: SQLiteRepository = Depends(get_repository), provider=Depends(get_provider)) -> list[dict[str, Any]]:
-    """Natural-language search → structured filters → ranked jobs with explanations."""
+@router.post("/search", response_model=SearchOut)
+async def search_jobs(body: SearchIn, repository: SQLiteRepository = Depends(get_repository), provider=Depends(get_provider)) -> dict[str, Any]:
     if not body.query.strip():
         raise HTTPException(status_code=400, detail="Query must not be empty")
-
-    # 1. Extract structured filters with LLM
-    system, user = search_prompt(body.query)
-    filters = (await generate_schema(provider, "search", system, user, SearchFiltersOutput)).model_dump()
-
     jobs = load_jobs_list()
-
-    # 2. Filter by role keywords (loose substring match)
-    role_keywords = [k.lower() for k in (filters.get("role_keywords") or []) if k]
-    skill_keywords = [k.lower() for k in (filters.get("skills") or []) if k]
-
-    def matches_role(job: dict[str, Any]) -> bool:
-        if not role_keywords and not skill_keywords:
-            return True
-        haystack = " ".join([
-            job.get("title", ""),
-            job.get("description", ""),
-            " ".join(job.get("must_have_skills", []) + job.get("nice_to_have_skills", [])),
-        ]).lower()
-        return any(kw in haystack for kw in role_keywords + skill_keywords)
-
-    candidates = [j for j in jobs if matches_role(j)]
-    if not candidates:
-        candidates = jobs  # fall back to all jobs so demo isn't empty
-
-    # 3. Score + rank
+    warnings = query_warnings(body.query, body.model_dump(exclude_unset=True))
+    filters = local_filters(body.query, jobs)
+    if not warnings:
+        try:
+            system, user = search_prompt(body.query)
+            filters = (await generate_schema(provider, "search", system, user, SearchFiltersOutput)).model_dump()
+        except GenerationError:
+            warnings.append("AI parsing is unavailable. Using local keyword search; review the filters and results.")
+    for field in ("location", "work_mode", "seniority"):
+        if getattr(body, field) is not None:
+            filters[field] = getattr(body, field)
     profile = await run_in_threadpool(repository.get_profile)
-    scored = []
-    for j in candidates:
-        score, matched, missing, reason = _score_job(profile, j, filters)
-        scored.append({
-            "job": j,
-            "score": score,
-            "matched_skills": matched,
-            "missing_skills": missing,
-            "reason": reason,
-        })
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored[:8]
+    ambiguous = any("cannot represent" in warning for warning in warnings)
+    return {"results": [] if ambiguous else rank_jobs(jobs, profile, filters), "filters": filters,
+            "warnings": warnings, "source": "curated", "personalized": bool(profile["skills"])}
 
 
 @router.get("/shortlist")
