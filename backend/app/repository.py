@@ -73,7 +73,7 @@ class SQLiteRepository:
             db.execute("PRAGMA journal_mode=WAL")
         with self.connection(write=True) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version > 1:
+            if version > 3:
                 raise RuntimeError("CareerOS database version is newer than this application")
             if version == 0:
                 statements = [
@@ -89,7 +89,13 @@ class SQLiteRepository:
                 for statement in statements:
                     db.execute(statement)
                 db.execute("PRAGMA user_version=1")
-            db.execute("INSERT OR IGNORE INTO profile VALUES (1,?,?,?)", (encoded(ProfileFacts().model_dump()), 0, timestamp()))
+            if version < 2:
+                db.execute("ALTER TABLE answers ADD COLUMN feedback_cache_key TEXT")
+                db.execute("PRAGMA user_version=2")
+            if version < 3:
+                db.execute("ALTER TABLE profile ADD COLUMN location_is_manual INTEGER NOT NULL DEFAULT 0 CHECK(location_is_manual IN (0,1))")
+                db.execute("PRAGMA user_version=3")
+            db.execute("INSERT OR IGNORE INTO profile (id,facts,revision,updated_at) VALUES (1,?,?,?)", (encoded(ProfileFacts().model_dump()), 0, timestamp()))
             for job in load_jobs_list():
                 db.execute("INSERT INTO jobs VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (job["id"], encoded(job)))
 
@@ -110,6 +116,8 @@ class SQLiteRepository:
                 raise RepositoryError("Profile changed. Reload before saving.", "profile_revision_conflict")
             facts = {key: profile[key] for key in ProfileFacts.model_fields}
             facts.update(checked)
+            if "preferred_location" in checked:
+                db.execute("UPDATE profile SET location_is_manual=1 WHERE id=1")
             if facts == {key: profile[key] for key in ProfileFacts.model_fields}:
                 return profile
             db.execute("UPDATE profile SET facts=?, revision=revision+1, updated_at=? WHERE id=1", (encoded(facts), timestamp()))
@@ -121,7 +129,8 @@ class SQLiteRepository:
             old = self._profile(db)
             if expected_revision is not None and old["revision"] != expected_revision:
                 raise RepositoryError("Profile changed while parsing. Reload and try again.", "profile_revision_conflict")
-            defaults["preferred_location"] = old["preferred_location"] or defaults["preferred_location"]
+            if db.execute("SELECT location_is_manual FROM profile WHERE id=1").fetchone()[0]:
+                defaults["preferred_location"] = old["preferred_location"]
             db.execute("UPDATE profile SET facts=?, revision=revision+1, updated_at=? WHERE id=1", (encoded(defaults), timestamp()))
             return self._profile(db)
 
@@ -130,7 +139,8 @@ class SQLiteRepository:
         with self.connection(write=True) as db:
             self._check_ticket(db, ticket)
             old = self._profile(db)
-            defaults["preferred_location"] = old["preferred_location"] or defaults["preferred_location"]
+            if db.execute("SELECT location_is_manual FROM profile WHERE id=1").fetchone()[0]:
+                defaults["preferred_location"] = old["preferred_location"]
             db.execute("UPDATE profile SET facts=?, revision=revision+1, updated_at=? WHERE id=1", (encoded(defaults), timestamp()))
             return self._profile(db)
 
@@ -177,15 +187,18 @@ class SQLiteRepository:
             job = db.execute("SELECT payload FROM jobs WHERE id=?", (job_id,)).fetchone()
             if job is None and kind != "profile_upload":
                 raise RepositoryError("Job not found", "job_not_found", 404)
-            cache_key = hashlib.sha256(encoded([kind, job_id, job[0] if job else None, options, profile_revision, model, prompt_version]).encode()).hexdigest()
-            ticket = GenerationTicket(uuid4().hex, target, kind, job_id, dict(options), profile_revision, model, prompt_version, cache_key, session_id, question_id, answer_version)
+            evaluation_inputs = None
             if session_id is not None:
                 session = self._check_session(db, job_id, session_id, question_id, writable=True)
                 if session["profile_revision"] != profile_revision:
                     raise RepositoryError("Profile changed. Generate a new interview session before evaluating.", "session_stale")
-                answer = db.execute("SELECT version FROM answers WHERE session_id=? AND question_id=?", (session_id, question_id)).fetchone()
-                if answer is None or answer[0] != answer_version:
+                answer = db.execute("SELECT version, answer FROM answers WHERE session_id=? AND question_id=?", (session_id, question_id)).fetchone()
+                if answer is None or answer["version"] != answer_version:
                     raise RepositoryError("Answer changed before evaluation", "answer_version_conflict")
+                question = next(question for question in json.loads(session["questions"]) if question["id"] == question_id)
+                evaluation_inputs = [session_id, question, answer_version, answer["answer"]]
+            cache_key = hashlib.sha256(encoded([kind, job_id, job[0] if job else None, options, profile_revision, model, prompt_version, evaluation_inputs]).encode()).hexdigest()
+            ticket = GenerationTicket(uuid4().hex, target, kind, job_id, dict(options), profile_revision, model, prompt_version, cache_key, session_id, question_id, answer_version)
             db.execute("INSERT INTO generation_tickets VALUES (?,?) ON CONFLICT(target) DO UPDATE SET token=excluded.token", (target, ticket.token))
             return ticket
 
@@ -237,16 +250,17 @@ class SQLiteRepository:
         revision = self._profile(db)["revision"]
         history = [{"session_id": row["id"], "created_at": row["created_at"], "evaluated_count": row["evaluated_count"], "is_current": bool(row["is_current"]), "is_stale": row["profile_revision"] != revision} for row in db.execute("SELECT s.*, (SELECT COUNT(*) FROM answers a WHERE a.session_id=s.id AND a.feedback IS NOT NULL) evaluated_count FROM sessions s WHERE s.job_id=? ORDER BY s.created_at DESC", (job_id,))]
         row = self._check_session(db, job_id, session_id) if session_id else db.execute("SELECT * FROM sessions WHERE job_id=? AND is_current=1", (job_id,)).fetchone()
-        result = {"job_id": job_id, "session_id": None, "profile_revision": revision, "created_at": None, "is_stale": False, "is_current": False, "questions": [], "answers": {}, "answer_versions": {}, "scores": {}, "feedback": {}, "history": history}
+        result = {"job_id": job_id, "session_id": None, "profile_revision": revision, "created_at": None, "generated_at": None, "model": None, "prompt_version": None, "is_stale": False, "is_current": False, "questions": [], "answers": {}, "answer_versions": {}, "scores": {}, "feedback": {}, "history": history}
         if row is None:
             return result
-        result.update(session_id=row["id"], profile_revision=row["profile_revision"], created_at=row["created_at"], is_stale=row["profile_revision"] != revision, is_current=bool(row["is_current"]), questions=json.loads(row["questions"]))
+        result.update(session_id=row["id"], profile_revision=row["profile_revision"], created_at=row["created_at"], generated_at=row["created_at"], model=row["model"], prompt_version=row["prompt_version"], is_stale=row["profile_revision"] != revision, is_current=bool(row["is_current"]), questions=json.loads(row["questions"]))
         for answer in db.execute("SELECT * FROM answers WHERE session_id=?", (row["id"],)):
             qid = answer["question_id"]
             result["answers"][qid] = answer["answer"]
             result["answer_versions"][qid] = answer["version"]
             if answer["feedback"]:
                 feedback = json.loads(answer["feedback"])
+                feedback["is_stale"] = row["profile_revision"] != revision
                 result["feedback"][qid] = feedback
                 result["scores"][qid] = feedback["score"]
         return result
@@ -279,14 +293,22 @@ class SQLiteRepository:
             if expected_version is not None and expected_version != version:
                 raise RepositoryError("Draft changed. Reload before saving.", "answer_version_conflict")
             if old is None or old["answer"] != answer:
-                db.execute("INSERT INTO answers VALUES (?,?,?,?,NULL) ON CONFLICT(session_id,question_id) DO UPDATE SET answer=excluded.answer, version=excluded.version, feedback=NULL", (session_id, question_id, answer, version + 1))
+                db.execute("INSERT INTO answers (session_id,question_id,answer,version,feedback,feedback_cache_key) VALUES (?,?,?,?,NULL,NULL) ON CONFLICT(session_id,question_id) DO UPDATE SET answer=excluded.answer, version=excluded.version, feedback=NULL, feedback_cache_key=NULL", (session_id, question_id, answer, version + 1))
             return self._session(db, job_id, session_id)
 
     def commit_feedback(self, ticket: GenerationTicket, feedback: dict[str, Any]) -> dict[str, Any]:
         with self.connection(write=True) as db:
             self._check_ticket(db, ticket)
-            db.execute("UPDATE answers SET feedback=? WHERE session_id=? AND question_id=?", (encoded(feedback), ticket.session_id, ticket.question_id))
-            return feedback
+            answer = db.execute("SELECT answer FROM answers WHERE session_id=? AND question_id=?", (ticket.session_id, ticket.question_id)).fetchone()[0]
+            output = {**feedback, "submitted_answer": answer, "job_id": ticket.job_id, "profile_revision": ticket.profile_revision, "generated_at": timestamp(), "model": ticket.model, "prompt_version": ticket.prompt_version, "is_stale": False}
+            db.execute("UPDATE answers SET feedback=?, feedback_cache_key=? WHERE session_id=? AND question_id=?", (encoded(output), ticket.cache_key, ticket.session_id, ticket.question_id))
+            return output
+
+    def cached_feedback(self, ticket: GenerationTicket) -> dict[str, Any] | None:
+        with self.connection() as db:
+            self._check_ticket(db, ticket)
+            row = db.execute("SELECT feedback FROM answers WHERE session_id=? AND question_id=? AND version=? AND feedback_cache_key=?", (ticket.session_id, ticket.question_id, ticket.answer_version, ticket.cache_key)).fetchone()
+            return json.loads(row["feedback"]) if row and row["feedback"] else None
 
     def preparation_counts(self) -> dict[str, int]:
         with self.connection() as db:

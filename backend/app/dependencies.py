@@ -2,10 +2,11 @@
 from typing import Any
 
 from fastapi import HTTPException, Request
-from starlette.concurrency import run_in_threadpool
+from pydantic import BaseModel, ValidationError
 
 from .data_utils import load_jobs_dict
 from .repository import SQLiteRepository
+from .services.gemini_client import GenerationError
 
 
 def get_repository(request: Request) -> SQLiteRepository:
@@ -23,15 +24,10 @@ def get_job(job_id: str) -> dict[str, Any]:
     return job
 
 
-async def legacy_json(provider: Any, **kwargs) -> dict[str, Any]:
-    if provider is None:
-        from .services.openai_client import chat_json
-        return await run_in_threadpool(chat_json, **kwargs)
-    return await run_in_threadpool(provider.chat_json, **kwargs)
-
-
-async def legacy_text(provider: Any, **kwargs) -> str:
-    if provider is None:
-        from .services.openai_client import chat_text
-        return await run_in_threadpool(chat_text, **kwargs)
-    return await run_in_threadpool(provider.chat_text, **kwargs)
+async def generate_schema(provider: Any, operation: str, system: str, user: str, schema: type[BaseModel]):
+    """Validate injected outputs too, so callers never persist an unchecked response."""
+    try:
+        output = await provider.generate(operation, system, user, schema)
+        return schema.model_validate(output.model_dump() if isinstance(output, BaseModel) else output)
+    except ValidationError as exc:
+        raise GenerationError(502, "The AI response did not meet the expected format. Try generating again.", "generation_invalid") from exc

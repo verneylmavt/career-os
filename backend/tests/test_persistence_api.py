@@ -1,9 +1,11 @@
 from fastapi.testclient import TestClient
+import json
 import pytest
 
 from app.data_utils import load_jobs_list
 from app.main import create_app
 from app.repository import SQLiteRepository
+from app.services.gemini_client import GenerationError
 
 JOB_ID = load_jobs_list()[0]["id"]
 
@@ -11,24 +13,33 @@ JOB_ID = load_jobs_list()[0]["id"]
 class FakeProvider:
     calls = 0
     fail = False
+    model = "fake-model"
+    version = "test-v1"
 
-    def chat_json(self, **kwargs):
-        self.calls += 1
-        if self.fail:
-            raise RuntimeError("synthetic failure")
-        if "6 mock interview" in kwargs["system"]:
-            return {"questions": [{"id": "q1", "category": "behavioral", "question": "Why this role?", "what_we_look_for": "specifics"}]}
-        if "Evaluate" in kwargs["system"]:
-            return {"score": 8, "strengths": ["Clear"], "gaps": [], "improved_answer_example": "Example"}
-        if "resume parser" in kwargs["system"]:
-            return {"skills": []}
-        return {"mission_guess": "Preparation", "talking_points": [], "smart_questions_to_ask": [], "watch_outs": []}
+    def model_for(self, operation):
+        return self.model
 
-    def chat_text(self, **kwargs):
+    def prompt_version(self, operation):
+        return self.version
+
+    async def generate(self, operation, system, user, response_schema):
         self.calls += 1
+        self.last_user = user
         if self.fail:
-            raise RuntimeError("synthetic failure")
-        return "## Summary\nSaved work\n\nATS Keywords: Python"
+            raise GenerationError(503, "Synthetic service failure", "provider_unavailable", True)
+        if operation == "questions":
+            categories = ["behavioral", "behavioral", "technical", "technical", "role-specific", "role-specific"]
+            return response_schema.model_validate({"questions": [{"id": f"q{i + 1}", "category": category, "question": f"Describe your approach to task {i + 1}?", "what_we_look_for": "A specific example"} for i, category in enumerate(categories)]})
+        if operation == "evaluation":
+            return response_schema.model_validate({"score": 8, "strengths": ["Clear"], "gaps": [], "improved_answer_example": "Example", "rubric": {"clarity": 8, "specificity": 8, "role_alignment": 8, "technical_accuracy": None}})
+        if operation == "extraction":
+            return response_schema.model_validate({"skills": []})
+        if operation in {"tailor", "cover_letter"}:
+            source = json.loads(user)["candidate_source"]["resume_text"]
+            evidence = [{"claim": source, "source_excerpt": source}]
+            payload = {"tailored_resume_md": f"## Summary\n{source}", "summary_rewrite": source, "ats_keywords": ["Python"], "source_excerpts": evidence} if operation == "tailor" else {"cover_letter": source, "source_excerpts": evidence}
+            return response_schema.model_validate(payload)
+        return response_schema.model_validate({"mission_guess": "Preparation", "talking_points": ["Posting context"], "smart_questions_to_ask": ["What are your priorities?"], "watch_outs": []})
 
 
 @pytest.fixture

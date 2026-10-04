@@ -1,4 +1,5 @@
 import pytest
+import sqlite3
 
 from app.repository import RepositoryError, SQLiteRepository
 from app.data_utils import load_jobs_list
@@ -95,3 +96,54 @@ def test_upload_latest_ticket_wins_and_noop_patch_keeps_revision(tmp_path):
     with pytest.raises(RepositoryError):
         repository.commit_profile(first, {"resume_text": "old"})
     assert repository.commit_profile(newer, {"resume_text": "new"})["revision"] == 1
+
+
+def test_version_one_database_upgrades_without_losing_drafts(tmp_path):
+    repository = repo(tmp_path)
+    ticket = repository.begin_generation("questions", JOB_ID, {}, "fake", "v1")
+    session = repository.create_session(ticket, [{"id": "q1", "question": "Question"}])
+    repository.save_answer(JOB_ID, session["session_id"], "q1", "Keep this draft")
+    with sqlite3.connect(repository.path) as db:
+        db.execute("ALTER TABLE answers DROP COLUMN feedback_cache_key")
+        db.execute("ALTER TABLE profile DROP COLUMN location_is_manual")
+        db.execute("PRAGMA user_version=1")
+    repository.initialize()
+    assert repository.get_session(JOB_ID)["answers"]["q1"] == "Keep this draft"
+    with sqlite3.connect(repository.path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+
+
+def test_extracted_location_is_replaced_but_manual_preference_survives(tmp_path):
+    repository = repo(tmp_path)
+    repository.replace_profile({"resume_text": "First", "preferred_location": "Singapore"})
+    assert repository.replace_profile({"resume_text": "Second"})["preferred_location"] == ""
+    ticket = repository.begin_generation("profile_upload", "", {}, "fake", "v1")
+    repository.commit_profile(ticket, {"resume_text": "Third", "preferred_location": "Tokyo"})
+    ticket = repository.begin_generation("profile_upload", "", {}, "fake", "v1")
+    assert repository.commit_profile(ticket, {"resume_text": "Fourth", "preferred_location": "Paris"})["preferred_location"] == "Paris"
+    repository.patch_profile({"preferred_location": "Bangkok"})
+    assert repository.replace_profile({"resume_text": "Fifth", "preferred_location": "London"})["preferred_location"] == "Bangkok"
+    reopened = SQLiteRepository(repository.path)
+    reopened.initialize()
+    ticket = reopened.begin_generation("profile_upload", "", {}, "fake", "v1")
+    assert reopened.commit_profile(ticket, {"resume_text": "Sixth"})["preferred_location"] == "Bangkok"
+    reopened.patch_profile({"preferred_location": ""})
+    assert reopened.replace_profile({"resume_text": "Seventh", "preferred_location": "Tokyo"})["preferred_location"] == ""
+
+
+def test_selecting_existing_extracted_location_marks_manual_without_revision_change(tmp_path):
+    repository = repo(tmp_path)
+    extracted = repository.replace_profile({"resume_text": "First", "preferred_location": "Singapore"})
+    assert repository.patch_profile({"preferred_location": "Singapore"})["revision"] == extracted["revision"]
+    assert repository.replace_profile({"resume_text": "Second"})["preferred_location"] == "Singapore"
+
+
+def test_version_two_profile_migrates_without_assuming_manual_preference(tmp_path):
+    repository = repo(tmp_path)
+    repository.replace_profile({"resume_text": "Old candidate", "preferred_location": "Singapore"})
+    with sqlite3.connect(repository.path) as db:
+        db.execute("ALTER TABLE profile DROP COLUMN location_is_manual")
+        db.execute("PRAGMA user_version=2")
+    repository.initialize()
+    assert repository.get_profile()["preferred_location"] == "Singapore"
+    assert repository.replace_profile({"resume_text": "New candidate"})["preferred_location"] == ""

@@ -5,11 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from ..config import PROMPT_VERSION, generation_model
 from ..data_utils import load_jobs_list
-from ..dependencies import get_job, get_provider, get_repository, legacy_json
+from ..dependencies import generate_schema, get_job, get_provider, get_repository
 from ..repository import SQLiteRepository
 from ..schemas import RegenerateIn, SearchIn, ShortlistIn, ShortlistPatch
+from ..services.model_schemas import PreparationBriefOutput, SearchFiltersOutput, generation_prompt, search_prompt
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -78,19 +78,8 @@ async def search_jobs(body: SearchIn, repository: SQLiteRepository = Depends(get
         raise HTTPException(status_code=400, detail="Query must not be empty")
 
     # 1. Extract structured filters with LLM
-    filters = await legacy_json(
-        provider,
-        system=(
-            "You convert a job-seeker's natural-language wish into structured filters. "
-            "Only fill fields that are clearly expressed. Use these enums where applicable: "
-            "work_mode in [Remote, Hybrid, On-site]. seniority in [Intern, Junior, Mid, Mid-Senior, Senior, Staff]."
-        ),
-        user=body.query,
-        schema_hint=(
-            '{ "role_keywords": string[], "location": string, "work_mode": string, '
-            '"seniority": string, "skills": string[], "industries": string[] }'
-        ),
-    )
+    system, user = search_prompt(body.query)
+    filters = (await generate_schema(provider, "search", system, user, SearchFiltersOutput)).model_dump()
 
     jobs = load_jobs_list()
 
@@ -164,24 +153,12 @@ def get_company_dossier(job_id: str, repository: SQLiteRepository = Depends(get_
 @router.post("/{job_id}/dossier")
 async def company_dossier(job_id: str, body: RegenerateIn, repository: SQLiteRepository = Depends(get_repository), provider=Depends(get_provider)) -> dict[str, Any]:
     job = get_job(job_id)
-    ticket = await run_in_threadpool(repository.begin_generation, "dossier", job_id, {}, generation_model(), PROMPT_VERSION)
+    profile = await run_in_threadpool(repository.get_profile)
+    ticket = await run_in_threadpool(repository.begin_generation, "dossier", job_id, {}, provider.model_for("dossier"), provider.prompt_version("dossier"), expected_revision=profile["revision"])
     if not body.regenerate:
         cached = await run_in_threadpool(repository.cached_artifact, ticket)
         if cached is not None:
             return cached
-    data = await legacy_json(
-        provider,
-        system=(
-            "You are an interview-prep researcher. Given a company + role, produce a concise dossier. "
-            "When unsure, write 'Likely…' rather than fabricating specifics."
-        ),
-        user=(
-            f"Company: {job['company']}\nRole: {job['title']}\nLocation: {job['location']}\n"
-            f"Description: {job['description']}"
-        ),
-        schema_hint=(
-            '{ "mission_guess": string, "talking_points": string[], '
-            '"smart_questions_to_ask": string[], "watch_outs": string[] }'
-        ),
-    )
-    return await run_in_threadpool(repository.commit_artifact, ticket, data)
+    system, user = generation_prompt("dossier", profile, job)
+    output = await generate_schema(provider, "dossier", system, user, PreparationBriefOutput)
+    return await run_in_threadpool(repository.commit_artifact, ticket, output.model_dump())

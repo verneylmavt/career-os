@@ -1,7 +1,9 @@
 """Public request contracts and persisted candidate facts."""
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, field_validator, model_validator
 
 Status = Literal["saved", "applied", "interviewing", "offer", "rejected"]
 Tone = Literal["warm", "direct", "formal"]
@@ -21,6 +23,13 @@ class ProfileFacts(StrictModel):
     experience_years: Annotated[StrictInt, Field(ge=0, le=80)] = 0
     preferred_location: Annotated[StrictStr, Field(max_length=200)] = ""
 
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value):
+        if value and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+            raise ValueError("Provide a valid email or leave it empty")
+        return value
+
 
 class ProfileOut(ProfileFacts):
     revision: int
@@ -36,6 +45,11 @@ class ProfileUpdate(StrictModel):
     preferred_location: Annotated[StrictStr, Field(max_length=200)] | None = None
     expected_revision: Annotated[StrictInt, Field(ge=0)] | None = None
 
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value):
+        return ProfileFacts.valid_email(value) if value is not None else value
+
     @model_validator(mode="after")
     def reject_null_facts(self):
         for field in self.model_fields_set - {"expected_revision"}:
@@ -46,7 +60,7 @@ class ProfileUpdate(StrictModel):
 
 class GenerationIn(StrictModel):
     job_id: Identifier
-    regenerate: bool = False
+    regenerate: StrictBool = False
 
 
 class CoverLetterIn(GenerationIn):
@@ -54,7 +68,7 @@ class CoverLetterIn(GenerationIn):
 
 
 class RegenerateIn(StrictModel):
-    regenerate: bool = False
+    regenerate: StrictBool = False
 
 
 class ShortlistIn(StrictModel):
@@ -90,6 +104,7 @@ class EvaluateIn(StrictModel):
     question_id: Identifier
     question: StrictStr | None = None
     answer: Answer
+    regenerate: StrictBool = False
 
     @model_validator(mode="after")
     def nonempty_answer(self):

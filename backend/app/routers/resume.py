@@ -4,10 +4,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
 
-from ..config import PROMPT_VERSION, generation_model
-from ..dependencies import get_job, get_provider, get_repository, legacy_text
+from ..dependencies import generate_schema, get_job, get_provider, get_repository
 from ..repository import SQLiteRepository
 from ..schemas import CoverLetterIn, GenerationIn, Tone
+from ..services.model_schemas import CoverLetterOutput, TailoredResumeOutput, generation_prompt, verify_grounding
 
 router = APIRouter(prefix="/api/resume", tags=["resume"])
 TailorIn = GenerationIn
@@ -25,43 +25,15 @@ async def tailor_resume(body: GenerationIn, repository: SQLiteRepository = Depen
     profile = await run_in_threadpool(repository.get_profile)
     if not profile["resume_text"]:
         raise HTTPException(status_code=400, detail="Upload a resume first")
-    ticket = await run_in_threadpool(repository.begin_generation, "tailored_resume", body.job_id, {}, generation_model(), PROMPT_VERSION, expected_revision=profile["revision"])
+    ticket = await run_in_threadpool(repository.begin_generation, "tailored_resume", body.job_id, {}, provider.model_for("tailor"), provider.prompt_version("tailor"), expected_revision=profile["revision"])
     if not body.regenerate:
         cached = await run_in_threadpool(repository.cached_artifact, ticket)
         if cached is not None:
             return cached
-    response = await legacy_text(
-        provider,
-        system="You are an expert resume writer. Only restate truths already present in the candidate's resume, using vocabulary of the target role.",
-        user=(f"JOB POSTING\nTitle: {job['title']} @ {job['company']} ({job['location']}, {job['work_mode']})\n"
-              f"Must-have skills: {', '.join(job.get('must_have_skills', []))}\nDescription: {job['description']}\n"
-              f"CANDIDATE RESUME\n{profile['resume_text']}\n"
-              "Rewrite in Markdown with a tailored summary, Skills, Experience, Projects and Education. Do not invent facts. End with ATS Keywords: followed by a comma-separated keyword list."),
-        temperature=0.5,
-    )
-    if not response.strip():
-        raise HTTPException(status_code=502, detail="Generated resume was empty. Try again.")
-    tailored, keywords = response, []
-    for marker in ("ATS Keywords:", "ATS keywords:", "**ATS Keywords**:", "## ATS Keywords"):
-        if marker in response:
-            head, _, tail = response.partition(marker)
-            tailored = head.rstrip()
-            keywords = [item.strip(" \n*-•") for item in tail.replace("\n", ",").split(",") if item.strip(" \n*-•")][:20]
-            break
-    summary_lines, collecting = [], False
-    for line in tailored.splitlines():
-        if line.strip().lower().startswith(("## summary", "**summary**", "# summary", "summary")):
-            collecting = True
-            continue
-        if collecting:
-            if line.strip().startswith(("#", "**")):
-                break
-            if line.strip():
-                summary_lines.append(line.strip())
-            if len(summary_lines) >= 5:
-                break
-    payload = {"tailored_resume_md": tailored, "ats_keywords": keywords, "summary_rewrite": " ".join(summary_lines)}
-    return await run_in_threadpool(repository.commit_artifact, ticket, payload)
+    system, user = generation_prompt("tailor", profile, job)
+    output = await generate_schema(provider, "tailor", system, user, TailoredResumeOutput)
+    verify_grounding(output, profile["resume_text"])
+    return await run_in_threadpool(repository.commit_artifact, ticket, output.model_dump())
 
 
 @router.post("/cover-letter")
@@ -70,17 +42,12 @@ async def cover_letter(body: CoverLetterIn, repository: SQLiteRepository = Depen
     profile = await run_in_threadpool(repository.get_profile)
     if not profile["resume_text"]:
         raise HTTPException(status_code=400, detail="Upload a resume first")
-    ticket = await run_in_threadpool(repository.begin_generation, "cover_letter", body.job_id, {"tone": body.tone}, generation_model(), PROMPT_VERSION, expected_revision=profile["revision"])
+    ticket = await run_in_threadpool(repository.begin_generation, "cover_letter", body.job_id, {"tone": body.tone}, provider.model_for("cover_letter"), provider.prompt_version("cover_letter"), expected_revision=profile["revision"])
     if not body.regenerate:
         cached = await run_in_threadpool(repository.cached_artifact, ticket)
         if cached is not None:
             return cached
-    text = await legacy_text(
-        provider,
-        system="Write concise, sincere cover letters. Use only candidate facts in the resume. Avoid clichés. Write three short paragraphs.",
-        user=f"Role: {job['title']} @ {job['company']}\nDescription: {job['description']}\nCandidate resume:\n{profile['resume_text']}\nTone: {body.tone}. Under 250 words.",
-        temperature=0.7,
-    )
-    if not text.strip():
-        raise HTTPException(status_code=502, detail="Generated cover letter was empty. Try again.")
-    return await run_in_threadpool(repository.commit_artifact, ticket, {"cover_letter": text})
+    system, user = generation_prompt("cover_letter", profile, job, {"tone": body.tone})
+    output = await generate_schema(provider, "cover_letter", system, user, CoverLetterOutput)
+    verify_grounding(output, profile["resume_text"])
+    return await run_in_threadpool(repository.commit_artifact, ticket, output.model_dump())
