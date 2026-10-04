@@ -35,3 +35,12 @@ yarn-error.log*
 
 # Data
 backend/app/data/state.json
+
+# Local persistence and verification artifacts
+backend/.data/
+.superpowers/
+.ruff_cache/
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+output/
