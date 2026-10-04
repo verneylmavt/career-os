@@ -50,8 +50,7 @@ async def evaluate_answer(body: EvaluateIn, repository: SQLiteRepository = Depen
         raise HTTPException(status_code=404, detail="Question not found in this session")
     if body.question is not None and body.question != question["question"]:
         raise HTTPException(status_code=422, detail="Question text must match the saved question")
-    session = await run_in_threadpool(repository.save_answer, body.job_id, body.session_id, body.question_id, body.answer, expected_version=session["answer_versions"].get(body.question_id, 0))
-    ticket = await run_in_threadpool(repository.begin_generation, "evaluation", body.job_id, {}, provider.model_for("evaluation"), provider.prompt_version("evaluation"), session_id=body.session_id, question_id=body.question_id, answer_version=session["answer_versions"][body.question_id], expected_revision=profile["revision"])
+    ticket = await run_in_threadpool(repository.prepare_evaluation, body.job_id, body.session_id, body.question_id, body.answer, provider.model_for("evaluation"), provider.prompt_version("evaluation"), expected_revision=profile["revision"], expected_version=session["answer_versions"].get(body.question_id, 0))
     if not body.regenerate:
         cached = await run_in_threadpool(repository.cached_feedback, ticket)
         if cached is not None:

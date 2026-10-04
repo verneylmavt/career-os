@@ -2,7 +2,7 @@
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from ..data_utils import load_jobs_list
@@ -49,6 +49,12 @@ async def search_jobs(body: SearchIn, repository: SQLiteRepository = Depends(get
     for field in ("location", "work_mode", "seniority"):
         if getattr(body, field) is not None:
             filters[field] = getattr(body, field)
+    try:
+        filters = SearchFiltersOutput.model_validate(filters).model_dump()
+    except ValidationError:
+        # Do not truncate constraints: that could silently broaden a user's search.
+        warnings.append("Local search cannot represent this request. Use at most 20 role keywords, shorter terms, and a location under 200 characters.")
+        filters = SearchFiltersOutput(**{field: getattr(body, field) for field in ("location", "work_mode", "seniority") if getattr(body, field) is not None}).model_dump()
     profile = await run_in_threadpool(repository.get_profile)
     ambiguous = any("cannot represent" in warning for warning in warnings)
     return {"results": [] if ambiguous else rank_jobs(jobs, profile, filters), "filters": filters,

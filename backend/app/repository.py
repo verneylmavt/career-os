@@ -180,27 +180,42 @@ class SQLiteRepository:
 
     def begin_generation(self, kind: str, job_id: str, options: dict[str, Any], model: str, prompt_version: str, *, session_id: str | None = None, question_id: str | None = None, answer_version: int | None = None, expected_revision: int | None = None) -> GenerationTicket:
         with self.connection(write=True) as db:
+            return self._begin_generation(db, kind, job_id, options, model, prompt_version, session_id=session_id, question_id=question_id, answer_version=answer_version, expected_revision=expected_revision)
+
+    def _begin_generation(self, db, kind: str, job_id: str, options: dict[str, Any], model: str, prompt_version: str, *, session_id: str | None = None, question_id: str | None = None, answer_version: int | None = None, expected_revision: int | None = None) -> GenerationTicket:
+        profile_revision = self._profile(db)["revision"]
+        if expected_revision is not None and profile_revision != expected_revision:
+            raise RepositoryError("Profile changed before generation started", "profile_revision_conflict")
+        target = encoded([kind, job_id, options, session_id, question_id])
+        job = db.execute("SELECT payload FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if job is None and kind != "profile_upload":
+            raise RepositoryError("Job not found", "job_not_found", 404)
+        evaluation_inputs = None
+        if session_id is not None:
+            session = self._check_session(db, job_id, session_id, question_id, writable=True)
+            if session["profile_revision"] != profile_revision:
+                raise RepositoryError("Profile changed. Generate a new interview session before evaluating.", "session_stale")
+            answer = db.execute("SELECT version, answer FROM answers WHERE session_id=? AND question_id=?", (session_id, question_id)).fetchone()
+            if answer is None or answer["version"] != answer_version:
+                raise RepositoryError("Answer changed before evaluation", "answer_version_conflict")
+            question = next(question for question in json.loads(session["questions"]) if question["id"] == question_id)
+            evaluation_inputs = [session_id, question, answer_version, answer["answer"]]
+        cache_key = hashlib.sha256(encoded([kind, job_id, job[0] if job else None, options, profile_revision, model, prompt_version, evaluation_inputs]).encode()).hexdigest()
+        ticket = GenerationTicket(uuid4().hex, target, kind, job_id, dict(options), profile_revision, model, prompt_version, cache_key, session_id, question_id, answer_version)
+        db.execute("INSERT INTO generation_tickets VALUES (?,?) ON CONFLICT(target) DO UPDATE SET token=excluded.token", (target, ticket.token))
+        return ticket
+
+    def prepare_evaluation(self, job_id: str, session_id: str, question_id: str, answer: str, model: str, prompt_version: str, *, expected_revision: int, expected_version: int) -> GenerationTicket:
+        """Check eligibility, save the submission and issue its ticket atomically."""
+        with self.connection(write=True) as db:
             profile_revision = self._profile(db)["revision"]
-            if expected_revision is not None and profile_revision != expected_revision:
-                raise RepositoryError("Profile changed before generation started", "profile_revision_conflict")
-            target = encoded([kind, job_id, options, session_id, question_id])
-            job = db.execute("SELECT payload FROM jobs WHERE id=?", (job_id,)).fetchone()
-            if job is None and kind != "profile_upload":
-                raise RepositoryError("Job not found", "job_not_found", 404)
-            evaluation_inputs = None
-            if session_id is not None:
-                session = self._check_session(db, job_id, session_id, question_id, writable=True)
-                if session["profile_revision"] != profile_revision:
-                    raise RepositoryError("Profile changed. Generate a new interview session before evaluating.", "session_stale")
-                answer = db.execute("SELECT version, answer FROM answers WHERE session_id=? AND question_id=?", (session_id, question_id)).fetchone()
-                if answer is None or answer["version"] != answer_version:
-                    raise RepositoryError("Answer changed before evaluation", "answer_version_conflict")
-                question = next(question for question in json.loads(session["questions"]) if question["id"] == question_id)
-                evaluation_inputs = [session_id, question, answer_version, answer["answer"]]
-            cache_key = hashlib.sha256(encoded([kind, job_id, job[0] if job else None, options, profile_revision, model, prompt_version, evaluation_inputs]).encode()).hexdigest()
-            ticket = GenerationTicket(uuid4().hex, target, kind, job_id, dict(options), profile_revision, model, prompt_version, cache_key, session_id, question_id, answer_version)
-            db.execute("INSERT INTO generation_tickets VALUES (?,?) ON CONFLICT(target) DO UPDATE SET token=excluded.token", (target, ticket.token))
-            return ticket
+            if profile_revision != expected_revision:
+                raise RepositoryError("Profile changed before evaluation started", "profile_revision_conflict")
+            session = self._check_session(db, job_id, session_id, question_id, writable=True)
+            if session["profile_revision"] != profile_revision:
+                raise RepositoryError("Profile changed. Generate a new interview session before evaluating.", "session_stale")
+            version = self._write_answer(db, session_id, question_id, answer, expected_version)
+            return self._begin_generation(db, "evaluation", job_id, {}, model, prompt_version, session_id=session_id, question_id=question_id, answer_version=version, expected_revision=expected_revision)
 
     def _check_ticket(self, db, ticket: GenerationTicket) -> None:
         row = db.execute("SELECT token FROM generation_tickets WHERE target=?", (ticket.target,)).fetchone()
@@ -288,13 +303,18 @@ class SQLiteRepository:
     def save_answer(self, job_id: str, session_id: str, question_id: str, answer: str, expected_version: int | None = None) -> dict[str, Any]:
         with self.connection(write=True) as db:
             self._check_session(db, job_id, session_id, question_id, writable=True)
-            old = db.execute("SELECT * FROM answers WHERE session_id=? AND question_id=?", (session_id, question_id)).fetchone()
-            version = old["version"] if old else 0
-            if expected_version is not None and expected_version != version:
-                raise RepositoryError("Draft changed. Reload before saving.", "answer_version_conflict")
-            if old is None or old["answer"] != answer:
-                db.execute("INSERT INTO answers (session_id,question_id,answer,version,feedback,feedback_cache_key) VALUES (?,?,?,?,NULL,NULL) ON CONFLICT(session_id,question_id) DO UPDATE SET answer=excluded.answer, version=excluded.version, feedback=NULL, feedback_cache_key=NULL", (session_id, question_id, answer, version + 1))
+            self._write_answer(db, session_id, question_id, answer, expected_version)
             return self._session(db, job_id, session_id)
+
+    def _write_answer(self, db, session_id: str, question_id: str, answer: str, expected_version: int | None) -> int:
+        old = db.execute("SELECT * FROM answers WHERE session_id=? AND question_id=?", (session_id, question_id)).fetchone()
+        version = old["version"] if old else 0
+        if expected_version is not None and expected_version != version:
+            raise RepositoryError("Draft changed. Reload before saving.", "answer_version_conflict")
+        if old is None or old["answer"] != answer:
+            version += 1
+            db.execute("INSERT INTO answers (session_id,question_id,answer,version,feedback,feedback_cache_key) VALUES (?,?,?,?,NULL,NULL) ON CONFLICT(session_id,question_id) DO UPDATE SET answer=excluded.answer, version=excluded.version, feedback=NULL, feedback_cache_key=NULL", (session_id, question_id, answer, version))
+        return version
 
     def commit_feedback(self, ticket: GenerationTicket, feedback: dict[str, Any]) -> dict[str, Any]:
         with self.connection(write=True) as db:

@@ -147,3 +147,40 @@ def test_version_two_profile_migrates_without_assuming_manual_preference(tmp_pat
     repository.initialize()
     assert repository.get_profile()["preferred_location"] == "Singapore"
     assert repository.replace_profile({"resume_text": "New candidate"})["preferred_location"] == ""
+
+
+def test_evaluation_preparation_checks_draft_version_before_any_mutation(tmp_path):
+    repository = repo(tmp_path)
+    ticket = repository.begin_generation("questions", JOB_ID, {}, "fake", "v1")
+    session = repository.create_session(ticket, [{"id": "q1", "question": "Question"}])
+    sid = session["session_id"]
+    repository.save_answer(JOB_ID, sid, "q1", "Saved answer")
+    accepted = repository.prepare_evaluation(JOB_ID, sid, "q1", "Saved answer", "fake", "v1", expected_revision=0, expected_version=1)
+    repository.commit_feedback(accepted, {"score": 8})
+    before = repository.get_session(JOB_ID)
+    with pytest.raises(RepositoryError, match="Draft changed"):
+        repository.prepare_evaluation(JOB_ID, sid, "q1", "Rejected answer", "fake", "v1", expected_revision=0, expected_version=0)
+    assert repository.get_session(JOB_ID) == before
+    assert repository.cached_feedback(accepted)["score"] == 8
+
+
+def test_evaluation_preparation_excludes_concurrent_profile_writer(tmp_path, monkeypatch):
+    repository = repo(tmp_path)
+    ticket = repository.begin_generation("questions", JOB_ID, {}, "fake", "v1")
+    session = repository.create_session(ticket, [{"id": "q1", "question": "Question"}])
+    original_write_answer = repository._write_answer
+
+    def check_write_excluded(db, *args, **kwargs):
+        # At the moment the answer is changed, a second connection must be unable
+        # to modify the profile between eligibility validation and ticket issue.
+        with sqlite3.connect(repository.path, timeout=0) as concurrent:
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                concurrent.execute("UPDATE profile SET revision=revision+1 WHERE id=1")
+        return original_write_answer(db, *args, **kwargs)
+
+    monkeypatch.setattr(repository, "_write_answer", check_write_excluded)
+    evaluation = repository.prepare_evaluation(JOB_ID, session["session_id"], "q1", "Accepted answer", "fake", "v1", expected_revision=0, expected_version=0)
+    assert evaluation.profile_revision == 0
+    assert evaluation.answer_version == 1
+    repository.commit_feedback(evaluation, {"score": 8})
+    assert repository.get_session(JOB_ID)["answers"]["q1"] == "Accepted answer"

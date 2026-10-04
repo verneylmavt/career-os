@@ -15,7 +15,7 @@ import { Spinner } from "@/components/Spinner";
 function ResumePageInner() {
   const search = useSearchParams();
   const router = useRouter();
-  const { mutate } = useSWRConfig();
+  const { mutate, cache } = useSWRConfig();
   const profileResource = useProfile();
   const contextResource = useContexts();
   const contexts = contextResource.data ?? [];
@@ -38,11 +38,18 @@ function ResumePageInner() {
   async function tailor() {
     if (!selected || !hasResume) return;
     const capturedJob = jobId;
-    const capturedKey = keys.documents(capturedJob, tone);
+    const documentsPrefix = `/api/resume/${encodeURIComponent(capturedJob)}/documents?`;
     const regenerate = !!documents.data?.tailored_resume;
     await action.run(resumeKey, async (signal) => {
       const result = await api.tailorResume(capturedJob, regenerate, signal);
-      await mutate(capturedKey, (previous: Documents | undefined) => ({ job_id: capturedJob, tailored_resume: result, cover_letter: previous?.cover_letter ?? null }), false);
+      // The resume is shared across tones; each tone keeps its own cover letter.
+      await mutate(
+        (key) => typeof key === "string" && key.startsWith(documentsPrefix) && cache.get(key)?.data !== undefined,
+        (previous: Documents | undefined) => previous ? { ...previous, tailored_resume: result } : previous,
+        false,
+      );
+      // Restart a still-loading tone read so an earlier response cannot restore an old resume.
+      void mutate((key) => typeof key === "string" && key.startsWith(documentsPrefix) && cache.get(key)?.data === undefined);
       void mutate(keys.contexts);
       void mutate(keys.stats);
       return result;

@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from app.data_utils import load_jobs_list
 from app.main import create_app
@@ -21,6 +22,17 @@ class SearchProvider:
         if self.failed:
             raise GenerationError(503, "No AI configured", "provider_unconfigured")
         return response_schema.model_validate(self.filters)
+
+
+@pytest.mark.parametrize("query", [" ".join(f"term{i}" for i in range(21)), "jobs in " + "a" * 201, "a" * 501])
+def test_unrepresentable_local_request_is_actionable_instead_of_internal_error(tmp_path, query):
+    with TestClient(create_app(SQLiteRepository(tmp_path / "bounded.sqlite3"), SearchProvider(failed=True))) as client:
+        response = client.post("/api/jobs/search", json={"query": query})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["results"] == []
+        assert any("cannot represent" in warning for warning in data["warnings"])
+        assert data["filters"]["role_keywords"] == []
 
 
 def test_explicit_filter_wins_and_empty_results_remain_empty(tmp_path):

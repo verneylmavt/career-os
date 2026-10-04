@@ -60,6 +60,35 @@ def test_failed_regeneration_preserves_document_session_and_feedback(setup):
     assert client.get(f"/api/interview/{JOB_ID}/session").json()["feedback"]["q1"] == feedback
 
 
+@pytest.mark.parametrize("concurrent_change", [False, True])
+def test_rejected_stale_evaluation_preserves_draft_and_feedback(setup, monkeypatch, concurrent_change):
+    client, repository, provider = setup
+    session = client.post("/api/interview/questions", json={"job_id": JOB_ID}).json()
+    sid = session["session_id"]
+    payload = {"job_id": JOB_ID, "session_id": sid, "question_id": "q1", "answer": "Saved answer"}
+    assert client.post("/api/interview/evaluate", json=payload).status_code == 200
+    if concurrent_change:
+        original_get_session = repository.get_session
+
+        def get_session_then_change_profile(*args, **kwargs):
+            snapshot = original_get_session(*args, **kwargs)
+            repository.patch_profile({"name": "Changed during request"})
+            return snapshot
+
+        monkeypatch.setattr(repository, "get_session", get_session_then_change_profile)
+    else:
+        repository.patch_profile({"name": "Changed before request"})
+    with repository.connection() as db:
+        before = dict(db.execute("SELECT * FROM answers WHERE session_id=? AND question_id='q1'", (sid,)).fetchone())
+    calls = provider.calls
+    result = client.post("/api/interview/evaluate", json={**payload, "answer": "Rejected replacement answer"})
+    assert result.status_code == 409
+    assert provider.calls == calls
+    with repository.connection() as db:
+        after = dict(db.execute("SELECT * FROM answers WHERE session_id=? AND question_id='q1'", (sid,)).fetchone())
+    assert after == before
+
+
 def test_upload_bounds_and_formats_do_not_touch_provider_or_profile(setup):
     client, repository, provider = setup
     original = repository.get_profile()

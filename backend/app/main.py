@@ -17,9 +17,10 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")  # also accept back
 from .routers import dashboard, interview, jobs, profile, resume  # noqa: E402
 from .config import database_path  # noqa: E402
 from .repository import RepositoryError, SQLiteRepository  # noqa: E402
-from .services.gemini_client import GeminiProvider, GenerationError  # noqa: E402
+from .services.gemini_client import GeminiProvider, GenerationError, configure_generation_logging  # noqa: E402
 
 def create_app(repository: SQLiteRepository | None = None, provider=None) -> FastAPI:
+    configure_generation_logging()
     selected_repository = repository if repository is not None else SQLiteRepository(database_path())
     selected_provider = provider if provider is not None else GeminiProvider()
 

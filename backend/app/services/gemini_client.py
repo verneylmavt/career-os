@@ -5,6 +5,7 @@ single logical operation, with one retry for transport or server failures.
 """
 
 import asyncio
+import json
 import logging
 import os
 import threading
@@ -21,6 +22,28 @@ from pydantic import BaseModel, ValidationError
 logger = logging.getLogger(__name__)
 Output = TypeVar("Output", bound=BaseModel)
 _PROCESS_SLOTS = threading.BoundedSemaphore(2)
+
+
+class _MetricsFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        # Deliberately allow only operational fields, never prompts or exceptions.
+        fields = ("operation", "model", "prompt_version", "latency_ms", "status",
+                  "input_tokens", "output_tokens", "total_tokens")
+        return json.dumps({"event": "gemini_generation", **{field: getattr(record, field, None) for field in fields}})
+
+
+class _MetricsHandler(logging.StreamHandler):
+    def __init__(self):
+        super().__init__()
+        self.setFormatter(_MetricsFormatter())
+        self.addFilter(lambda record: record.msg == "gemini_generation")
+
+
+def configure_generation_logging() -> None:
+    """Emit safe JSON metrics in the ordinary local server configuration."""
+    if not any(isinstance(handler, _MetricsHandler) for handler in logger.handlers):
+        logger.addHandler(_MetricsHandler())
+    logger.setLevel(logging.INFO)
 
 _PROMPT_VERSIONS = {
     "extraction": "profile-evidence-v1",

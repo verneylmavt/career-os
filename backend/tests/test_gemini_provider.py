@@ -1,5 +1,8 @@
 import asyncio
 import json
+import os
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import httpx
@@ -64,6 +67,30 @@ async def test_schema_sent_to_sdk_and_sparse_resume_has_empty_defaults(caplog):
     assert sent["config"].temperature is None
     assert "Synthetic resume" not in caplog.text
     assert caplog.records[-1].total_tokens == 28
+
+
+def test_app_emits_safe_generation_metrics_without_global_logging_setup(tmp_path):
+    # A fresh process verifies normal server logging without pytest's capture handlers.
+    script = """
+import asyncio
+from types import SimpleNamespace
+from app.main import create_app
+from app.services.gemini_client import GeminiProvider
+from app.services.model_schemas import ExtractionOutput
+async def generate_content(**kwargs):
+    return SimpleNamespace(text='{}', prompt_feedback=None, candidates=[], usage_metadata=SimpleNamespace(prompt_token_count=17, candidates_token_count=11, total_token_count=28))
+create_app()
+client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content)))
+asyncio.run(GeminiProvider(client=client, environment={}).generate('extraction', 'Conservative parser', 'Synthetic resume', ExtractionOutput))
+"""
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True,
+                            env={**os.environ, "CAREEROS_DB_PATH": str(tmp_path / "metrics.sqlite3"), "GEMINI_API_KEY": ""}, timeout=15)
+    lines = result.stderr.splitlines()
+    metrics = next(json.loads(line) for line in lines if '"event": "gemini_generation"' in line)
+    assert metrics["status"] == "success"
+    assert metrics["latency_ms"] >= 0 and metrics["total_tokens"] == 28
+    assert metrics["operation"] == "extraction"
+    assert "Synthetic resume" not in json.dumps(metrics)
 
 
 async def test_real_sdk_unspecified_block_enum_is_not_a_block():

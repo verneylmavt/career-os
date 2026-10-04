@@ -18,6 +18,31 @@ Done when: the eight commits below pass their checks, fresh integrated browser/b
 7. Refine purple contrast, responsive layouts, navigation/forms/focus/status accessibility; multi-viewport keyboard/browser checks pass.
 8. Real proxy/backend/SQLite integration, CI, README and paired AGENTS/CLAUDE updates; final review and all suites pass before push.
 
+## Execution status
+
+| Commit | State | Verified gate |
+| --- | --- | --- |
+| 1. Toolchain | Complete: `33c553d` | Baseline unit/routes, configured lint, type checking and production build passed |
+| 2. SQLite workspace | Complete: `140906a` | Repository/API persistence, database isolation, partial notes updates and validation passed |
+| 3. Bounded Gemini | Complete: `6fe0a4f` | Upload preservation, provider schema/deadline/retry limits, grounding and concurrent-write checks passed |
+| 4. Discovery/metrics | Complete: `2355687` | Strict filters, aliases, fallback and current-session metrics passed; coordinated client contracts and Discover checked |
+| 5. Resource/proxy coordination | Complete: `c043cf6` | Proxy multipart/deadline/error tests and frontend resource tests passed; provider JSON-schema regression passed |
+| 6. Saved preparation | Complete: `2c8e2a8` | Saved profile/documents, notes, drafts/history, retained work and failed-regeneration behavior checked |
+| 7. Responsive/accessibility | Complete: `60bf519` | All five pages checked at four widths; keyboard, 200% zoom, reduced motion and accessibility gates passed |
+| 8. Integration/docs/review | Implementation and checks verified | Real-stack harness, CI and documentation complete; all 11 production integration checks passed; independent review resolved |
+
+The SWR/validated client foundation landed with commit 4 because the search/dashboard consumers needed the new contracts at the same time. Commit 5 completed proxy reliability and resource coordination. Saved-resource reads never cause AI generation.
+
+Final checks passed: 82 backend tests, Ruff and dependency consistency; 32 frontend unit tests, ESLint, type checking and production build; five mocked browser checks; all 11 production integration checks using real Next proxy/FastAPI and isolated SQLite. Integration includes actual backend PID restart, multipart forwarding, saved-work workflows, all five pages at 320/390/768/1280 px, keyboard use, 200% zoom, reduced motion and automated accessibility checks. The 320 px dashboard and 1280 px Resume page were also inspected visually. JobCard's entrance animation was removed after it caused a transient contrast failure during accessibility verification; the completed checks passed across all four widths.
+
+Independent final review identified three issues, all fixed and rechecked: evaluation preparation now atomically rejects obsolete inputs without partially mutating a draft; oversized local-search fallback constraints produce validated empty results with an actionable warning; shared tailored-resume updates reach loaded tone caches while preserving each tone's cover letter. The reviewer found no new blocking issue after those fixes.
+
+The final server check also enabled the safe JSON generation metrics handler under ordinary logging defaults. A fresh-process regression verifies operational fields are emitted without source content; independent review confirmed handler idempotency and field exclusion.
+
+Credentialed synthetic evaluation is separate from the deterministic gates. An initial configured legacy-model request exposed an SDK schema-conversion issue; using raw `response_json_schema` fixed that adapter issue and passed a regression check. Subsequent live probes could not assess output because existing configured provider credentials were rejected. No live model-accuracy result is claimed. The explicit global model selection was preserved.
+
+The implementation, verification and review gates are satisfied. Delivery procedure: commit the final integration/documentation change, push `main` to `origin/main` without force, and verify the remote contains the completed series. The pre-delivery fetch found remote `main` unchanged from the starting baseline, so no merge was needed. Report the final commit identity and verified remote state in the delivery response.
+
 ## Shared interfaces
 
 - Profile retains its fields and adds revision and updated_at. PATCH accepts optional expected_revision; candidate fact replacement never inherits missing old facts.

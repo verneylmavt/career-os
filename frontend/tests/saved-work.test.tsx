@@ -130,6 +130,26 @@ describe("saved preparation pages", () => {
     expect(screen.queryByRole("heading", { name: "Late first role resume" })).not.toBeInTheDocument();
   });
 
+  it("updates the shared resume after a delayed generation across tone caches while keeping each letter", async () => {
+    let finish: (value: Response) => void = () => { throw new Error("Generation did not start"); };
+    const directLetter = { job_id: "job-test", profile_revision: 3, generated_at: "2026-10-01T10:00:00Z", model: "fake", prompt_version: "test", is_stale: false, cover_letter: "Direct letter kept" };
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") return new Promise<Response>((resolve) => { finish = resolve; });
+      if (String(input).endsWith("documents?tone=direct")) return Promise.resolve(response({ ...documents, cover_letter: directLetter }));
+      return Promise.resolve(savedReads(input));
+    }));
+    render(resumeView());
+    await screen.findByRole("heading", { name: "Saved resume" });
+    await userEvent.click(screen.getByRole("button", { name: "Regenerate resume" }));
+    await userEvent.selectOptions(screen.getByLabelText("Letter tone"), "direct");
+    await screen.findByText("Direct letter kept");
+    expect(screen.getByRole("heading", { name: "Saved resume" })).toBeVisible();
+    await act(async () => finish(response({ ...documents.tailored_resume, tailored_resume_md: "# Updated shared resume" })));
+    expect(await screen.findByRole("heading", { name: "Updated shared resume" })).toBeVisible();
+    expect(screen.getByText("Direct letter kept")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Saved resume" })).not.toBeInTheDocument();
+  });
+
   it("makes an unknown role deep link recoverable without reading unknown documents", async () => {
     navigation.query = "job=unknown";
     const fetch = vi.fn(async (input: RequestInfo | URL) => savedReads(input));

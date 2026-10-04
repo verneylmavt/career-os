@@ -1,0 +1,58 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend checks
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: Backend lint and deterministic tests
+        working-directory: backend
+        run: |
+          python -m ruff check app tests tools
+          python -m pytest -q
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend checks and production build
+        working-directory: frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          npm run test
+          npm run lint
+          npm run typecheck
+          npm run build
+      - name: Install browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Browser and real proxy/SQLite integration
+        working-directory: frontend
+        env:
+          PYTHON_BIN: python
+          CAREEROS_INTEGRATION_PRODUCTION: "1"
+        run: |
+          npm run test:e2e
+          npm run test:integration
+      - name: Preserve failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-traces
+          path: frontend/test-results
+          retention-days: 7
